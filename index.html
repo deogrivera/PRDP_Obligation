@@ -92,9 +92,10 @@
   <div class="subhead">Sheets: Earmarked Collector · Balance Collector · Obligation Collector · Reconciliation</div>
 
   <div class="upload-area">
-    <label for="file-input">📁 Upload .xlsx</label>
+    <button id="refresh-btn" type="button" style="background:#1a7a4a; color:white; border:none; padding:6px 18px; border-radius:40px; font-weight:500; font-size:0.85rem; cursor:pointer;">🔄 Refresh Google Sheet</button>
+    <label for="file-input">📁 Upload .xlsx instead</label>
     <input type="file" id="file-input" accept=".xlsx">
-    <span id="file-status" style="color: #1a4f73;">No file loaded</span>
+    <span id="file-status" style="color: #1a4f73;">⏳ Connecting to Google Sheet…</span>
   </div>
 
   <div class="tabs">
@@ -1688,31 +1689,149 @@
   const fileInputElem = document.getElementById('file-input');
   const fileStatusElem = document.getElementById('file-status');
 
+  // ================================================================
+  // SHARED: process a parsed SheetJS workbook, whatever its source
+  // ================================================================
+  function processWorkbook(workbook, sourceLabel) {
+    try {
+      const expectedSheets = ['Earmarked Collector', 'Balance Collector', 'Obligation Collector', 'Reconciliation'];
+      const missing = expectedSheets.filter(name => !workbook.Sheets[name]);
+      if (missing.length === expectedSheets.length) {
+        throw new Error('None of the expected sheets were found. Sheets present: ' + workbook.SheetNames.join(', '));
+      }
+
+      loadEarmarkedData(workbook);
+      loadBalancesData(workbook);
+      loadObligationData(workbook);
+      loadReconciliationData(workbook);
+
+      let statusMsg = `✅ ${sourceLabel} · Earmarked(${fullData.length}), Balances(${balFullData.length}), Obligation(${oblFullData.length}), Recon(${reconFullData.length})`;
+      if (missing.length > 0) {
+        statusMsg += ` ⚠️ missing: ${missing.join(', ')}`;
+      }
+      fileStatusElem.textContent = statusMsg;
+
+      document.querySelectorAll('.btn-export').forEach(b => b.disabled = false);
+
+      if (fullData.length > 0) {
+        document.querySelector('[data-tab="earmarked"]').click();
+      }
+      return true;
+    } catch (err) {
+      console.error('Error processing workbook:', err);
+      fileStatusElem.textContent = '❌ Error loading data: ' + err.message;
+      return false;
+    }
+  }
+
+  // ================================================================
+  // AUTO-FETCH: pull the 4 sheets, each published individually as CSV
+  // ================================================================
+  // Each PRDP sheet must be published on its own via Google Sheets'
+  // File → Share → Publish to the web → pick the sheet from the dropdown →
+  // Publish. A URL with the right gid is NOT enough by itself — if that
+  // sheet was never selected and published individually, the link 401s.
+  const CSV_SOURCES = {
+    'Earmarked Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxG-JCu1hLDAs2qKIrbZd4X9FSHqGoS_DFgBhMNS7I9Z0m9CuaQlvu3_MAxHZ225U00y1nIFedm3tp/pub?gid=1008817781&single=true&output=csv',
+    'Balance Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7qPMmPgOSp_dB5cnIpsWNHq4v8ZuuxcbuVog0krGbKdJ2jtgEds7p7HknUsjL7YPWMH4DhuiBCYv5/pub?output=csv',
+    'Obligation Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzWnSJrAHy8H8uVhAkC1afVy_Ggnw3ZRW_UQoyLANr3FxgDAZBbb4oyIdvG_o11gdPR67KooS9aJjs/pub?output=csv',
+    'Reconciliation': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQRc8z509VblkpL4UHk--jfpdnoqU-tDKi8ujrkwfXa7FOKj6Q1DqRa-uJBv7-4unAeNH7Iz9u6K66T/pub?output=csv',
+  };
+
+  // Google's "publish to web" export redirects to a googleusercontent.com URL
+  // that doesn't send an Access-Control-Allow-Origin header, so a plain fetch()
+  // is often blocked by the browser. Try direct first, then a few public
+  // CORS-proxy mirrors, before giving up on that sheet. Each attempt is capped
+  // with a timeout so a slow/hung proxy can't stall the whole chain.
+  const CORS_PROXIES = [
+    url => url,
+    url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  ];
+  const FETCH_TIMEOUT_MS = 10000;
+
+  function fetchWithTimeout(url, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return fetch(url, { cache: 'no-store', signal: controller.signal }).finally(() => clearTimeout(timer));
+  }
+
+  async function tryFetchCsvText(url, onAttempt) {
+    let lastErr = null;
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      try {
+        if (onAttempt) onAttempt(i);
+        const response = await fetchWithTimeout(CORS_PROXIES[i](url), FETCH_TIMEOUT_MS);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const text = await response.text();
+        if (!text || !text.trim()) throw new Error('Empty response.');
+        if (text.trim().startsWith('<')) throw new Error('Got an HTML page instead of CSV — sheet may not be published individually, or the gid is wrong.');
+        return text;
+      } catch (err) {
+        const label = err && err.name === 'AbortError' ? new Error(`Timed out after ${FETCH_TIMEOUT_MS / 1000}s`) : err;
+        lastErr = label;
+        console.warn(`Fetch attempt ${i} failed:`, label);
+      }
+    }
+    throw lastErr || new Error('All fetch attempts failed.');
+  }
+
+  async function fetchFromGoogleSheet() {
+    fileStatusElem.textContent = '⏳ Connecting to Google Sheet…';
+    const sheetEntries = Object.entries(CSV_SOURCES);
+    const loadedSheets = {};
+    const failedSheets = [];
+
+    await Promise.all(sheetEntries.map(async ([sheetName, baseUrl]) => {
+      // cache-bust so we always get the latest published version, not a stale cached copy
+      const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
+      try {
+        const csvText = await tryFetchCsvText(url, i => {
+          if (i > 0) fileStatusElem.textContent = `⏳ Fetching "${sheetName}"… (proxy ${i}/${CORS_PROXIES.length - 1})`;
+        });
+        const parsed = XLSX.read(csvText, { type: 'string' });
+        loadedSheets[sheetName] = parsed.Sheets[parsed.SheetNames[0]];
+      } catch (err) {
+        console.warn(`Could not load "${sheetName}":`, err);
+        failedSheets.push(sheetName + ' (' + err.message + ')');
+      }
+    }));
+
+    if (Object.keys(loadedSheets).length === 0) {
+      fileStatusElem.textContent = '❌ Could not reach any of the 4 sheets automatically. Use 📁 Upload .xlsx instead. Details: ' + failedSheets.join('; ');
+      return;
+    }
+
+    const workbook = { SheetNames: Object.keys(loadedSheets), Sheets: loadedSheets };
+    const ok = processWorkbook(workbook, '🔗 Live from Google Sheet (' + new Date().toLocaleTimeString() + ')');
+    if (failedSheets.length > 0) {
+      fileStatusElem.textContent += ` ⚠️ Not loaded: ${failedSheets.join('; ')} — check that tab is published individually.`;
+    } else if (!ok) {
+      fileStatusElem.textContent += ' — try 📁 Upload .xlsx instead below.';
+    }
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', fetchFromGoogleSheet);
+
+  // Try the live source as soon as the page loads
+  fetchFromGoogleSheet();
+
+  // ================================================================
+  // FALLBACK: manual .xlsx upload
+  // ================================================================
   fileInputElem.addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
-    
+
     fileStatusElem.textContent = '⏳ Loading...';
-    
+
     const reader = new FileReader();
     reader.onload = function(loadEv) {
       try {
         const data = new Uint8Array(loadEv.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
-        
-        loadEarmarkedData(workbook);
-        loadBalancesData(workbook);
-        loadObligationData(workbook);
-        loadReconciliationData(workbook);
-        
-        const totalRows = fullData.length + balFullData.length + oblFullData.length + reconFullData.length;
-        fileStatusElem.textContent = `✅ Loaded: Earmarked(${fullData.length}), Balances(${balFullData.length}), Obligation(${oblFullData.length}), Recon(${reconFullData.length})`;
-        
-        document.querySelectorAll('.btn-export').forEach(b => b.disabled = false);
-        
-        if (fullData.length > 0) {
-          document.querySelector('[data-tab="earmarked"]').click();
-        }
+        processWorkbook(workbook, '📁 ' + file.name);
       } catch (err) {
         console.error('Error reading file:', err);
         fileStatusElem.textContent = '❌ Error loading file: ' + err.message;
