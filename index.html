@@ -787,48 +787,48 @@
   const balRowCounter = document.getElementById('bal-row-counter');
 
   function loadBalancesData(workbook) {
-    const sheet = workbook.Sheets['Balance Collector'];
-    if (!sheet) { console.warn('Balance sheet not found.'); return; }
-    const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
-    if (!json || json.length === 0) return;
-    const headers = Object.keys(json[0]);
-    const findCol = (patterns) => {
-      for (const p of patterns) {
-        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
-        if (found) return found;
-      }
-      return null;
-    };
-    const colComponent = findCol(['component']);
-    const colCategory = findCol(['category']);
-    const colASASheet = findCol(['asa sheet', 'asa']);
-    const colParticulars = findCol(['particulars', 'description']);
-    const colAllocation = findCol(['allocation']);
-    const colBalance = findCol(['balance']);
-    balFullData = json.map(row => ({
-      Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
-      Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
-      ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
-      Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
-      Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
-      Balance: colBalance ? parseNumber(row[colBalance]) : 0,
-    })).filter(r => r.Allocation > 0 || r.Balance > 0);
-    
-    if (balFullData.length === 0) {
-      console.warn('No balance data loaded');
-      return;
+  const sheet = workbook.Sheets['Balance Collector'];
+  if (!sheet) { console.warn('Balance sheet not found.'); return; }
+  const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+  if (!json || json.length === 0) return;
+  const headers = Object.keys(json[0]);
+  const findCol = (patterns) => {
+    for (const p of patterns) {
+      const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+      if (found) return found;
     }
-    
-    const comps = [...new Set(balFullData.map(r => r.Component).filter(Boolean))];
-    const cats = [...new Set(balFullData.map(r => r.Category).filter(Boolean))];
-    const asas = [...new Set(balFullData.map(r => r.ASASheet).filter(Boolean))];
-    balCompFilter.innerHTML = '<option value="">All Components</option>' + comps.map(c => `<option value="${c}">${c}</option>`).join('');
-    balCatFilter.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    balAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
-    balSortConfig = { col: null, asc: true };
-    renderBalances();
+    return null;
+  };
+  const colComponent = findCol(['component']);
+  const colCategory = findCol(['category']);
+  const colASASheet = findCol(['asa sheet', 'asa']);
+  const colParticulars = findCol(['particulars', 'description']);
+  const colAllocation = findCol(['allocation']);
+  const colBalance = findCol(['balance']); // ✅ This finds the Balance column (Column F)
+  
+  balFullData = json.map(row => ({
+    Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
+    Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
+    ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+    Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
+    Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
+    Balance: colBalance ? parseNumber(row[colBalance]) : 0, // ✅ Now correctly uses Balance column
+  })).filter(r => r.Allocation > 0 || r.Balance > 0);
+  
+  if (balFullData.length === 0) {
+    console.warn('No balance data loaded');
+    return;
   }
-
+  
+  const comps = [...new Set(balFullData.map(r => r.Component).filter(Boolean))];
+  const cats = [...new Set(balFullData.map(r => r.Category).filter(Boolean))];
+  const asas = [...new Set(balFullData.map(r => r.ASASheet).filter(Boolean))];
+  balCompFilter.innerHTML = '<option value="">All Components</option>' + comps.map(c => `<option value="${c}">${c}</option>`).join('');
+  balCatFilter.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  balAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
+  balSortConfig = { col: null, asc: true };
+  renderBalances();
+}
   function renderBalances() {
     const searchTerm = balSearchInput.value.toLowerCase().trim();
     const compVal = balCompFilter.value, catVal = balCatFilter.value, asaVal = balAsaFilter.value;
@@ -884,32 +884,41 @@
     balExportBtn.disabled = balFilteredData.length === 0;
   }
 
-  function updateBalKPIs() {
-    const totalBal = balFullData.reduce((s,r) => s + r.Balance, 0);
-    const totalAlloc = balFullData.reduce((s,r) => s + r.Allocation, 0);
-    document.getElementById('kpi-bal-total').textContent = '₱ ' + formatCurrency(totalBal);
-    document.getElementById('kpi-bal-alloc').textContent = '₱ ' + formatCurrency(totalAlloc);
-    const util = totalAlloc > 0 ? ((totalAlloc - totalBal) / totalAlloc * 100) : 0;
-    document.getElementById('kpi-bal-util').textContent = util.toFixed(1) + '%';
-    document.getElementById('kpi-bal-ratio').textContent = totalAlloc > 0 ? ((totalBal / totalAlloc) * 100).toFixed(1) + '%' : '—';
-    const lowUtil = balFullData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
-    document.getElementById('kpi-bal-lowutil').textContent = lowUtil;
-    const largest = balFullData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
-    document.getElementById('kpi-bal-largest').textContent = '₱ ' + formatCurrency(largest);
+function updateBalKPIs() {
+  const totalBal = balFullData.reduce((s, r) => s + r.Balance, 0); // ✅ Sum from Balance column
+  const totalAlloc = balFullData.reduce((s, r) => s + r.Allocation, 0);
+  
+  document.getElementById('kpi-bal-total').textContent = '₱ ' + formatCurrency(totalBal); // ✅ Now shows Balance
+  document.getElementById('kpi-bal-alloc').textContent = '₱ ' + formatCurrency(totalAlloc);
+  
+  const util = totalAlloc > 0 ? ((totalAlloc - totalBal) / totalAlloc * 100) : 0;
+  document.getElementById('kpi-bal-util').textContent = util.toFixed(1) + '%';
+  document.getElementById('kpi-bal-ratio').textContent = totalAlloc > 0 ? ((totalBal / totalAlloc) * 100).toFixed(1) + '%' : '—';
+  
+  const lowUtil = balFullData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
+  document.getElementById('kpi-bal-lowutil').textContent = lowUtil;
+  
+  const largest = balFullData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
+  document.getElementById('kpi-bal-largest').textContent = '₱ ' + formatCurrency(largest);
 
-    const fBal = balFilteredData.reduce((s,r) => s + r.Balance, 0);
-    const fAlloc = balFilteredData.reduce((s,r) => s + r.Allocation, 0);
-    document.getElementById('kpi-bal-filt-total').textContent = '₱ ' + formatCurrency(fBal);
-    document.getElementById('kpi-bal-filt-alloc').textContent = '₱ ' + formatCurrency(fAlloc);
-    const fUtil = fAlloc > 0 ? ((fAlloc - fBal) / fAlloc * 100) : 0;
-    document.getElementById('kpi-bal-filt-util').textContent = fUtil.toFixed(1) + '%';
-    document.getElementById('kpi-bal-filt-ratio').textContent = fAlloc > 0 ? ((fBal / fAlloc) * 100).toFixed(1) + '%' : '—';
-    const fLowUtil = balFilteredData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
-    document.getElementById('kpi-bal-filt-lowutil').textContent = fLowUtil;
-    const fLargest = balFilteredData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
-    document.getElementById('kpi-bal-filt-largest').textContent = '₱ ' + formatCurrency(fLargest);
-  }
-
+  // Filtered KPIs
+  const fBal = balFilteredData.reduce((s, r) => s + r.Balance, 0); // ✅ Sum from Balance column
+  const fAlloc = balFilteredData.reduce((s, r) => s + r.Allocation, 0);
+  
+  document.getElementById('kpi-bal-filt-total').textContent = '₱ ' + formatCurrency(fBal); // ✅ Now shows Balance
+  document.getElementById('kpi-bal-filt-alloc').textContent = '₱ ' + formatCurrency(fAlloc);
+  
+  const fUtil = fAlloc > 0 ? ((fAlloc - fBal) / fAlloc * 100) : 0;
+  document.getElementById('kpi-bal-filt-util').textContent = fUtil.toFixed(1) + '%';
+  document.getElementById('kpi-bal-filt-ratio').textContent = fAlloc > 0 ? ((fBal / fAlloc) * 100).toFixed(1) + '%' : '—';
+  
+  const fLowUtil = balFilteredData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
+  document.getElementById('kpi-bal-filt-lowutil').textContent = fLowUtil;
+  
+  const fLargest = balFilteredData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
+  document.getElementById('kpi-bal-filt-largest').textContent = '₱ ' + formatCurrency(fLargest);
+}
+  
   function updateBalCharts() {
     const compMap = {};
     balFilteredData.forEach(r => { compMap[r.Component] = (compMap[r.Component] || 0) + r.Balance; });
