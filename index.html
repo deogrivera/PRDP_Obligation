@@ -443,7 +443,7 @@
     return 0;
   }
 
-  function parseExcelDate(value) {
+ function parseExcelDate(value) {
     if (!value) return null;
     if (value instanceof Date && !isNaN(value)) return value;
     
@@ -456,33 +456,31 @@
     if (typeof value === 'string') {
         value = value.trim();
         
-        // Handle DD/MM/YYYY format (your data format)
+        // FORCE DD/MM/YYYY parsing for your data
         let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         if (parts) {
-            let day = parseInt(parts[1]);
-            let month = parseInt(parts[2]) - 1;
-            let year = parseInt(parts[3]);
+            // Interpret as DD/MM/YYYY (day first, month second)
+            const day = parseInt(parts[1]);
+            const month = parseInt(parts[2]) - 1;
+            const year = parseInt(parts[3]);
             const date = new Date(year, month, day);
+            
             // Validate the date
-            if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+            if (!isNaN(date) && date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
                 return date;
             }
-            // If invalid, try swapping (MM/DD/YYYY)
-            const swappedDate = new Date(year, parseInt(parts[1]) - 1, parseInt(parts[2]));
-            if (swappedDate.getDate() === parseInt(parts[2]) && swappedDate.getMonth() === parseInt(parts[1]) - 1) {
-                return swappedDate;
-            }
+            // If invalid, return the date anyway (it will be an invalid date)
             return date;
         }
         
         // Handle DD-MM-YYYY format
         parts = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
         if (parts) {
-            let day = parseInt(parts[1]);
-            let month = parseInt(parts[2]) - 1;
-            let year = parseInt(parts[3]);
+            const day = parseInt(parts[1]);
+            const month = parseInt(parts[2]) - 1;
+            const year = parseInt(parts[3]);
             const date = new Date(year, month, day);
-            if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+            if (!isNaN(date) && date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
                 return date;
             }
             return date;
@@ -494,8 +492,7 @@
     }
     
     return null;
-  }
-
+}
   function formatDate(d) {
     if (!d || !(d instanceof Date) || isNaN(d)) return '';
     return d.toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' });
@@ -1156,46 +1153,49 @@
     }
     
     oblFullData = json.map(row => {
-        // Parse PR Date
-        let prDate = null;
-        const prDateKey = foundPRDate || colPRDate;
-        if (prDateKey) {
-            const rawDate = row[prDateKey];
-            prDate = parseExcelDate(rawDate);
-            // If parsing failed, try to parse as DD/MM/YYYY directly
-            if (!prDate && typeof rawDate === 'string') {
-                const cleaned = rawDate.trim();
-                let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                if (parts) {
-                    prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-                } else {
-                    parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-                    if (parts) {
-                        prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-                    }
-                }
+        // Parse PR Date - FORCE DD/MM/YYYY
+let prDate = null;
+const prDateKey = foundPRDate || colPRDate;
+if (prDateKey) {
+    const rawDate = row[prDateKey];
+    prDate = parseExcelDate(rawDate);
+    // If parsing failed or returned null, try to parse as DD/MM/YYYY directly
+    if (!prDate && typeof rawDate === 'string') {
+        const cleaned = rawDate.trim();
+        let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (parts) {
+            // FORCE DD/MM/YYYY: day is parts[1], month is parts[2]
+            prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+        } else {
+            parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            if (parts) {
+                prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
             }
         }
+    }
+}
         
-        // Parse ORS Date
-        let orsDate = null;
-        const orsDateKey = foundORSDate || colORSDate;
-        if (orsDateKey) {
-            const rawDate = row[orsDateKey];
-            orsDate = parseExcelDate(rawDate);
-            if (!orsDate && typeof rawDate === 'string') {
-                const cleaned = rawDate.trim();
-                let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                if (parts) {
-                    orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-                } else {
-                    parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-                    if (parts) {
-                        orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-                    }
-                }
+      // Parse ORS Date - FORCE DD/MM/YYYY
+let orsDate = null;
+const orsDateKey = foundORSDate || colORSDate;
+if (orsDateKey) {
+    const rawDate = row[orsDateKey];
+    orsDate = parseExcelDate(rawDate);
+    if (!orsDate && typeof rawDate === 'string') {
+        const cleaned = rawDate.trim();
+        let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (parts) {
+            // FORCE DD/MM/YYYY
+            orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+        } else {
+            parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            if (parts) {
+                orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
             }
         }
+    }
+}
+
         
         return {
             Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
