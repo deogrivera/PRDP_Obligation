@@ -456,10 +456,10 @@
     if (typeof value === 'string') {
         value = value.trim();
         
-        // FORCE DD/MM/YYYY parsing for your data
+        // FORCE DD/MM/YYYY parsing - day first, month second
         let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         if (parts) {
-            // Interpret as DD/MM/YYYY (day first, month second)
+            // DAY is parts[1], MONTH is parts[2] (DD/MM/YYYY)
             const day = parseInt(parts[1]);
             const month = parseInt(parts[2]) - 1;
             const year = parseInt(parts[3]);
@@ -469,13 +469,13 @@
             if (!isNaN(date) && date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
                 return date;
             }
-            // If invalid, return the date anyway (it will be an invalid date)
             return date;
         }
         
         // Handle DD-MM-YYYY format
         parts = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
         if (parts) {
+            // DAY is parts[1], MONTH is parts[2]
             const day = parseInt(parts[1]);
             const month = parseInt(parts[2]) - 1;
             const year = parseInt(parts[3]);
@@ -486,7 +486,7 @@
             return date;
         }
         
-        // Try standard date parsing as fallback
+        // Handle "Dec 3, 2026" format - use standard Date parsing as fallback
         let d = new Date(value);
         if (!isNaN(d)) return d;
     }
