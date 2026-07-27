@@ -447,66 +447,45 @@ function parseExcelDate(value) {
     if (!value) return null;
     if (value instanceof Date && !isNaN(value)) return value;
     
-    // Handle Excel serial numbers (days since 1899-12-30)
+    // Handle Excel serial numbers
     if (typeof value === 'number' && value > 59) {
         const excelEpoch = new Date(1899, 11, 30);
         return new Date(excelEpoch.getTime() + value * 86400000);
     }
     
     if (typeof value === 'string') {
-        // Remove any whitespace
         value = value.trim();
         
-        // Try DD/MM/YYYY format (most common in your data)
-        // This handles: 20/07/2026, 26/05/2026, etc.
+        // Handle DD/MM/YYYY format (your data format)
         let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         if (parts) {
             let day = parseInt(parts[1]);
-            let month = parseInt(parts[2]) - 1; // Month is 0-indexed
+            let month = parseInt(parts[2]) - 1;
             let year = parseInt(parts[3]);
-            return new Date(year, month, day);
+            const date = new Date(year, month, day);
+            // Validate the date
+            if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+                return date;
+            }
+            // If invalid, try swapping (MM/DD/YYYY)
+            const swappedDate = new Date(year, parseInt(parts[1]) - 1, parseInt(parts[2]));
+            if (swappedDate.getDate() === parseInt(parts[2]) && swappedDate.getMonth() === parseInt(parts[1]) - 1) {
+                return swappedDate;
+            }
+            return date;
         }
         
-        // Try DD-MM-YYYY format
+        // Handle DD-MM-YYYY format
         parts = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
         if (parts) {
             let day = parseInt(parts[1]);
             let month = parseInt(parts[2]) - 1;
             let year = parseInt(parts[3]);
-            return new Date(year, month, day);
-        }
-        
-        // Try MM/DD/YYYY format (less likely)
-        parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-        if (parts) {
-            // Check if it's likely DD/MM/YYYY vs MM/DD/YYYY
-            // If first number > 12, it must be DD/MM/YYYY
-            let first = parseInt(parts[1]);
-            let second = parseInt(parts[2]);
-            if (first > 12) {
-                // It's DD/MM/YYYY
-                return new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-            } else if (second > 12) {
-                // It's MM/DD/YYYY (second is day)
-                return new Date(parseInt(parts[3]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-            } else {
-                // Ambiguous, but likely DD/MM/YYYY for your data
-                return new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+            const date = new Date(year, month, day);
+            if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+                return date;
             }
-        }
-        
-        // Try MM-DD-YYYY format
-        parts = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-        if (parts) {
-            let first = parseInt(parts[1]);
-            let second = parseInt(parts[2]);
-            if (first > 12) {
-                return new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-            } else if (second > 12) {
-                return new Date(parseInt(parts[3]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-            } else {
-                return new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
-            }
+            return date;
         }
         
         // Try standard date parsing as fallback
