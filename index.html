@@ -1092,14 +1092,28 @@ function loadObligationData(workbook) {
     if (!json || json.length === 0) return;
     const headers = Object.keys(json[0]);
     
-    // Improved findCol function with exact match first, then partial
+    // Log all headers to help debug
+    console.log('Obligation sheet headers:', headers);
+    
+    // Improved findCol function - more flexible
     const findCol = (patterns) => {
+        // First try exact match (case insensitive)
         for (const p of patterns) {
             const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
             if (found) return found;
         }
+        // Then try partial match
         for (const p of patterns) {
             const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+            if (found) return found;
+        }
+        // Finally try to match any part of the header
+        for (const p of patterns) {
+            const found = headers.find(h => {
+                const lowerH = h.toLowerCase();
+                const lowerP = p.toLowerCase();
+                return lowerH.includes(lowerP) || lowerP.includes(lowerH);
+            });
             if (found) return found;
         }
         return null;
@@ -1108,41 +1122,83 @@ function loadObligationData(workbook) {
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
-    const colPRDate = findCol(['pr date', 'PR Date', 'PR', 'pr']);
-    const colPRNo = findCol(['pr no', 'pr number', 'PR No', 'PR Number']);
-    const colORSDate = findCol(['ors date', 'ORS Date', 'ORS', 'ors']);
-    const colORSNo = findCol(['ors no', 'ors number', 'ORS No', 'ORS Number']);
-    const colParticulars = findCol(['particulars', 'description', 'Particulars']);
-    const colActual = findCol(['actual obligation', 'actual', 'Actual Obligation']);
+    
+    // Look for date columns - be more flexible with patterns
+    const colPRDate = findCol(['pr date', 'pr', 'pr_date', 'prdate', 'purchase request date']);
+    const colPRNo = findCol(['pr no', 'pr number', 'prno', 'pr_number']);
+    const colORSDate = findCol(['ors date', 'ors', 'ors_date', 'orsdate', 'obligation request date']);
+    const colORSNo = findCol(['ors no', 'ors number', 'orsno', 'ors_number']);
+    const colParticulars = findCol(['particulars', 'description', 'particular']);
+    const colActual = findCol(['actual obligation', 'actual', 'obligation', 'amount']);
     
     console.log('Obligation columns found:', {
         colPRDate, colORSDate, colPRNo, colORSNo, colParticulars, colActual
     });
     
+    // If PR Date or ORS Date columns are not found, try to find them by position
+    // This is a fallback for when column headers don't match
+    let foundPRDate = colPRDate;
+    let foundORSDate = colORSDate;
+    
+    if (!foundPRDate) {
+        // Try to find a column that looks like it contains dates (format: dd/mm/yyyy or dd-mm-yyyy)
+        // Check the first few rows for date patterns
+        for (let i = 0; i < Math.min(5, json.length); i++) {
+            const row = json[i];
+            for (const key of headers) {
+                const val = String(row[key] || '').trim();
+                if (val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) || val.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+                    if (!foundPRDate) {
+                        foundPRDate = key;
+                        console.log(`Auto-detected PR Date column: "${key}" with value: "${val}"`);
+                    } else if (!foundORSDate && key !== foundPRDate) {
+                        foundORSDate = key;
+                        console.log(`Auto-detected ORS Date column: "${key}" with value: "${val}"`);
+                    }
+                }
+            }
+        }
+    }
+    
     oblFullData = json.map(row => {
         // Parse PR Date
         let prDate = null;
-        if (colPRDate) {
-            const rawDate = row[colPRDate];
+        const prDateKey = foundPRDate || colPRDate;
+        if (prDateKey) {
+            const rawDate = row[prDateKey];
             prDate = parseExcelDate(rawDate);
             // If parsing failed, try to parse as DD/MM/YYYY directly
             if (!prDate && typeof rawDate === 'string') {
-                const parts = rawDate.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                const cleaned = rawDate.trim();
+                let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
                 if (parts) {
                     prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                } else {
+                    // Try with dashes
+                    parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                    if (parts) {
+                        prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                    }
                 }
             }
         }
         
         // Parse ORS Date
         let orsDate = null;
-        if (colORSDate) {
-            const rawDate = row[colORSDate];
+        const orsDateKey = foundORSDate || colORSDate;
+        if (orsDateKey) {
+            const rawDate = row[orsDateKey];
             orsDate = parseExcelDate(rawDate);
             if (!orsDate && typeof rawDate === 'string') {
-                const parts = rawDate.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                const cleaned = rawDate.trim();
+                let parts = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
                 if (parts) {
                     orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                } else {
+                    parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                    if (parts) {
+                        orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                    }
                 }
             }
         }
@@ -1168,7 +1224,8 @@ function loadObligationData(workbook) {
     // Log sample data to verify dates
     console.log('Sample obligation data:', oblFullData.slice(0, 3).map(r => ({
         PRDate: r.PRDate ? formatDate(r.PRDate) : 'null',
-        ORSDate: r.ORSDate ? formatDate(r.ORSDate) : 'null'
+        ORSDate: r.ORSDate ? formatDate(r.ORSDate) : 'null',
+        raw: r
     })));
     
     const comps = [...new Set(oblFullData.map(r => r.Component).filter(Boolean))];
