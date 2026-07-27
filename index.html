@@ -862,7 +862,7 @@ function parseExcelDate(value) {
   const colASASheet = findCol(['asa sheet', 'asa']);
   const colParticulars = findCol(['particulars', 'description']);
   const colAllocation = findCol(['allocation']);
-  const colBalance = findCol(['balance']); // ✅ This finds the Balance column (Column F)
+  const colBalance = findCol(['Balance (Alloc less Total Oblig)']); // ✅ This finds the Balance column (Column F)
   
   balFullData = json.map(row => ({
     Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
