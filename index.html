@@ -1122,9 +1122,9 @@ function updateBalKPIs() {
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
-    const colPRDate = findCol(['pr date']);
+    const colPRDate = findCol(['pr date', 'PR Date', 'PR', 'pr']);
     const colPRNo = findCol(['pr no', 'pr number']);
-    const colORSDate = findCol(['ors date']);
+    const colORSDate = findCol(['ors date', 'ORS Date', 'ORS', 'ors']);
     const colORSNo = findCol(['ors no', 'ors number']);
     const colParticulars = findCol(['particulars', 'description']);
     const colActual = findCol(['actual obligation', 'actual']);
@@ -1403,12 +1403,17 @@ function updateBalKPIs() {
     if (!json || json.length === 0) return;
     const headers = Object.keys(json[0]);
     const findCol = (patterns) => {
-      for (const p of patterns) {
-        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
-        if (found) return found;
-      }
-      return null;
-    };
+  for (const p of patterns) {
+    const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
+    if (found) return found;
+  }
+  // Fallback: partial match
+  for (const p of patterns) {
+    const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+    if (found) return found;
+  }
+  return null;
+};
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
