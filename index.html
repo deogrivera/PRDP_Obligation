@@ -442,8 +442,8 @@
     }
     return 0;
   }
-//+++++++++++++++++++++++++
-function parseExcelDate(value) {
+
+  function parseExcelDate(value) {
     if (!value) return null;
     if (value instanceof Date && !isNaN(value)) return value;
     
@@ -494,10 +494,8 @@ function parseExcelDate(value) {
     }
     
     return null;
-}
-  //+++++++++++++++++++++++
+  }
 
-  
   function formatDate(d) {
     if (!d || !(d instanceof Date) || isNaN(d)) return '';
     return d.toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' });
@@ -824,48 +822,49 @@ function parseExcelDate(value) {
   const balRowCounter = document.getElementById('bal-row-counter');
 
   function loadBalancesData(workbook) {
-  const sheet = workbook.Sheets['Balance Collector'];
-  if (!sheet) { console.warn('Balance sheet not found.'); return; }
-  const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
-  if (!json || json.length === 0) return;
-  const headers = Object.keys(json[0]);
-  const findCol = (patterns) => {
-    for (const p of patterns) {
-      const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
-      if (found) return found;
+    const sheet = workbook.Sheets['Balance Collector'];
+    if (!sheet) { console.warn('Balance sheet not found.'); return; }
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    if (!json || json.length === 0) return;
+    const headers = Object.keys(json[0]);
+    const findCol = (patterns) => {
+      for (const p of patterns) {
+        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+        if (found) return found;
+      }
+      return null;
+    };
+    const colComponent = findCol(['component']);
+    const colCategory = findCol(['category']);
+    const colASASheet = findCol(['asa sheet', 'asa']);
+    const colParticulars = findCol(['particulars', 'description']);
+    const colAllocation = findCol(['allocation']);
+    const colBalance = findCol(['Balance (Alloc less Total Oblig)']);
+    
+    balFullData = json.map(row => ({
+      Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
+      Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
+      ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+      Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
+      Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
+      Balance: colBalance ? parseNumber(row[colBalance]) : 0,
+    })).filter(r => r.Allocation > 0 || r.Balance > 0);
+    
+    if (balFullData.length === 0) {
+      console.warn('No balance data loaded');
+      return;
     }
-    return null;
-  };
-  const colComponent = findCol(['component']);
-  const colCategory = findCol(['category']);
-  const colASASheet = findCol(['asa sheet', 'asa']);
-  const colParticulars = findCol(['particulars', 'description']);
-  const colAllocation = findCol(['allocation']);
-  const colBalance = findCol(['Balance (Alloc less Total Oblig)']); // ✅ This finds the Balance column (Column F)
-  
-  balFullData = json.map(row => ({
-    Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
-    Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
-    ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
-    Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
-    Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
-    Balance: colBalance ? parseNumber(row[colBalance]) : 0, // ✅ Now correctly uses Balance column
-  })).filter(r => r.Allocation > 0 || r.Balance > 0);
-  
-  if (balFullData.length === 0) {
-    console.warn('No balance data loaded');
-    return;
+    
+    const comps = [...new Set(balFullData.map(r => r.Component).filter(Boolean))];
+    const cats = [...new Set(balFullData.map(r => r.Category).filter(Boolean))];
+    const asas = [...new Set(balFullData.map(r => r.ASASheet).filter(Boolean))];
+    balCompFilter.innerHTML = '<option value="">All Components</option>' + comps.map(c => `<option value="${c}">${c}</option>`).join('');
+    balCatFilter.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    balAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
+    balSortConfig = { col: null, asc: true };
+    renderBalances();
   }
-  
-  const comps = [...new Set(balFullData.map(r => r.Component).filter(Boolean))];
-  const cats = [...new Set(balFullData.map(r => r.Category).filter(Boolean))];
-  const asas = [...new Set(balFullData.map(r => r.ASASheet).filter(Boolean))];
-  balCompFilter.innerHTML = '<option value="">All Components</option>' + comps.map(c => `<option value="${c}">${c}</option>`).join('');
-  balCatFilter.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-  balAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
-  balSortConfig = { col: null, asc: true };
-  renderBalances();
-}
+
   function renderBalances() {
     const searchTerm = balSearchInput.value.toLowerCase().trim();
     const compVal = balCompFilter.value, catVal = balCatFilter.value, asaVal = balAsaFilter.value;
@@ -921,41 +920,40 @@ function parseExcelDate(value) {
     balExportBtn.disabled = balFilteredData.length === 0;
   }
 
-function updateBalKPIs() {
-  const totalBal = balFullData.reduce((s, r) => s + r.Balance, 0); // ✅ Sum from Balance column
-  const totalAlloc = balFullData.reduce((s, r) => s + r.Allocation, 0);
-  
-  document.getElementById('kpi-bal-total').textContent = '₱ ' + formatCurrency(totalBal); // ✅ Now shows Balance
-  document.getElementById('kpi-bal-alloc').textContent = '₱ ' + formatCurrency(totalAlloc);
-  
-  const util = totalAlloc > 0 ? ((totalAlloc - totalBal) / totalAlloc * 100) : 0;
-  document.getElementById('kpi-bal-util').textContent = util.toFixed(1) + '%';
-  document.getElementById('kpi-bal-ratio').textContent = totalAlloc > 0 ? ((totalBal / totalAlloc) * 100).toFixed(1) + '%' : '—';
-  
-  const lowUtil = balFullData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
-  document.getElementById('kpi-bal-lowutil').textContent = lowUtil;
-  
-  const largest = balFullData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
-  document.getElementById('kpi-bal-largest').textContent = '₱ ' + formatCurrency(largest);
+  function updateBalKPIs() {
+    const totalBal = balFullData.reduce((s, r) => s + r.Balance, 0);
+    const totalAlloc = balFullData.reduce((s, r) => s + r.Allocation, 0);
+    
+    document.getElementById('kpi-bal-total').textContent = '₱ ' + formatCurrency(totalBal);
+    document.getElementById('kpi-bal-alloc').textContent = '₱ ' + formatCurrency(totalAlloc);
+    
+    const util = totalAlloc > 0 ? ((totalAlloc - totalBal) / totalAlloc * 100) : 0;
+    document.getElementById('kpi-bal-util').textContent = util.toFixed(1) + '%';
+    document.getElementById('kpi-bal-ratio').textContent = totalAlloc > 0 ? ((totalBal / totalAlloc) * 100).toFixed(1) + '%' : '—';
+    
+    const lowUtil = balFullData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
+    document.getElementById('kpi-bal-lowutil').textContent = lowUtil;
+    
+    const largest = balFullData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
+    document.getElementById('kpi-bal-largest').textContent = '₱ ' + formatCurrency(largest);
 
-  // Filtered KPIs
-  const fBal = balFilteredData.reduce((s, r) => s + r.Balance, 0); // ✅ Sum from Balance column
-  const fAlloc = balFilteredData.reduce((s, r) => s + r.Allocation, 0);
-  
-  document.getElementById('kpi-bal-filt-total').textContent = '₱ ' + formatCurrency(fBal); // ✅ Now shows Balance
-  document.getElementById('kpi-bal-filt-alloc').textContent = '₱ ' + formatCurrency(fAlloc);
-  
-  const fUtil = fAlloc > 0 ? ((fAlloc - fBal) / fAlloc * 100) : 0;
-  document.getElementById('kpi-bal-filt-util').textContent = fUtil.toFixed(1) + '%';
-  document.getElementById('kpi-bal-filt-ratio').textContent = fAlloc > 0 ? ((fBal / fAlloc) * 100).toFixed(1) + '%' : '—';
-  
-  const fLowUtil = balFilteredData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
-  document.getElementById('kpi-bal-filt-lowutil').textContent = fLowUtil;
-  
-  const fLargest = balFilteredData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
-  document.getElementById('kpi-bal-filt-largest').textContent = '₱ ' + formatCurrency(fLargest);
-}
-  
+    const fBal = balFilteredData.reduce((s, r) => s + r.Balance, 0);
+    const fAlloc = balFilteredData.reduce((s, r) => s + r.Allocation, 0);
+    
+    document.getElementById('kpi-bal-filt-total').textContent = '₱ ' + formatCurrency(fBal);
+    document.getElementById('kpi-bal-filt-alloc').textContent = '₱ ' + formatCurrency(fAlloc);
+    
+    const fUtil = fAlloc > 0 ? ((fAlloc - fBal) / fAlloc * 100) : 0;
+    document.getElementById('kpi-bal-filt-util').textContent = fUtil.toFixed(1) + '%';
+    document.getElementById('kpi-bal-filt-ratio').textContent = fAlloc > 0 ? ((fBal / fAlloc) * 100).toFixed(1) + '%' : '—';
+    
+    const fLowUtil = balFilteredData.filter(r => r.Allocation > 0 && ((r.Allocation - r.Balance) / r.Allocation) < 0.5).length;
+    document.getElementById('kpi-bal-filt-lowutil').textContent = fLowUtil;
+    
+    const fLargest = balFilteredData.reduce((max, r) => r.Balance > max ? r.Balance : max, 0);
+    document.getElementById('kpi-bal-filt-largest').textContent = '₱ ' + formatCurrency(fLargest);
+  }
+
   function updateBalCharts() {
     const compMap = {};
     balFilteredData.forEach(r => { compMap[r.Component] = (compMap[r.Component] || 0) + r.Balance; });
@@ -1072,7 +1070,7 @@ function updateBalKPIs() {
   });
 
   // ================================================================
-  // OBLIGATION
+  // OBLIGATION - UPDATED WITH FIXED DATE PARSING
   // ================================================================
   const oblTbody = document.getElementById('obl-table-body');
   const oblThead = document.getElementById('obl-table-head');
@@ -1084,30 +1082,30 @@ function updateBalKPIs() {
   const oblResetBtn = document.getElementById('obl-reset-filters');
   const oblExportBtn = document.getElementById('obl-export-btn');
   const oblRowCounter = document.getElementById('obl-row-counter');
-  
-function loadObligationData(workbook) {
+
+  function loadObligationData(workbook) {
     const sheet = workbook.Sheets['Obligation Collector'];
     if (!sheet) { console.warn('Obligation sheet not found.'); return; }
     const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
     if (!json || json.length === 0) return;
     const headers = Object.keys(json[0]);
     
-    // Log all headers to help debug
+    // Log all headers to debug
     console.log('Obligation sheet headers:', headers);
     
-    // Improved findCol function - more flexible
+    // Improved findCol function with exact match first, then partial
     const findCol = (patterns) => {
-        // First try exact match (case insensitive)
+        // Try exact match first (case insensitive)
         for (const p of patterns) {
             const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
             if (found) return found;
         }
-        // Then try partial match
+        // Try partial match
         for (const p of patterns) {
             const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
             if (found) return found;
         }
-        // Finally try to match any part of the header
+        // Try fuzzy match - check if any part of the header matches
         for (const p of patterns) {
             const found = headers.find(h => {
                 const lowerH = h.toLowerCase();
@@ -1122,31 +1120,28 @@ function loadObligationData(workbook) {
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
-    
-    // Look for date columns - be more flexible with patterns
-    const colPRDate = findCol(['pr date', 'pr', 'pr_date', 'prdate', 'purchase request date']);
-    const colPRNo = findCol(['pr no', 'pr number', 'prno', 'pr_number']);
-    const colORSDate = findCol(['ors date', 'ors', 'ors_date', 'orsdate', 'obligation request date']);
-    const colORSNo = findCol(['ors no', 'ors number', 'orsno', 'ors_number']);
-    const colParticulars = findCol(['particulars', 'description', 'particular']);
-    const colActual = findCol(['actual obligation', 'actual', 'obligation', 'amount']);
+    const colPRDate = findCol(['pr date', 'PR Date', 'PR', 'pr', 'pr_date', 'prdate', 'purchase request']);
+    const colPRNo = findCol(['pr no', 'pr number', 'PR No', 'PR Number', 'prno', 'pr_number']);
+    const colORSDate = findCol(['ors date', 'ORS Date', 'ORS', 'ors', 'ors_date', 'orsdate', 'obligation request']);
+    const colORSNo = findCol(['ors no', 'ors number', 'ORS No', 'ORS Number', 'orsno', 'ors_number']);
+    const colParticulars = findCol(['particulars', 'description', 'Particulars', 'particular']);
+    const colActual = findCol(['actual obligation', 'actual', 'Actual Obligation', 'obligation', 'amount']);
     
     console.log('Obligation columns found:', {
         colPRDate, colORSDate, colPRNo, colORSNo, colParticulars, colActual
     });
     
-    // If PR Date or ORS Date columns are not found, try to find them by position
-    // This is a fallback for when column headers don't match
+    // FALLBACK: If date columns weren't found by name, try to auto-detect them
     let foundPRDate = colPRDate;
     let foundORSDate = colORSDate;
     
-    if (!foundPRDate) {
-        // Try to find a column that looks like it contains dates (format: dd/mm/yyyy or dd-mm-yyyy)
-        // Check the first few rows for date patterns
+    if (!foundPRDate || !foundORSDate) {
+        // Scan the first few rows to find columns that contain date patterns
         for (let i = 0; i < Math.min(5, json.length); i++) {
             const row = json[i];
             for (const key of headers) {
                 const val = String(row[key] || '').trim();
+                // Check if value looks like a date (DD/MM/YYYY or DD-MM-YYYY)
                 if (val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) || val.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
                     if (!foundPRDate) {
                         foundPRDate = key;
@@ -1174,7 +1169,6 @@ function loadObligationData(workbook) {
                 if (parts) {
                     prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
                 } else {
-                    // Try with dashes
                     parts = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
                     if (parts) {
                         prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
@@ -1224,8 +1218,7 @@ function loadObligationData(workbook) {
     // Log sample data to verify dates
     console.log('Sample obligation data:', oblFullData.slice(0, 3).map(r => ({
         PRDate: r.PRDate ? formatDate(r.PRDate) : 'null',
-        ORSDate: r.ORSDate ? formatDate(r.ORSDate) : 'null',
-        raw: r
+        ORSDate: r.ORSDate ? formatDate(r.ORSDate) : 'null'
     })));
     
     const comps = [...new Set(oblFullData.map(r => r.Component).filter(Boolean))];
@@ -1236,8 +1229,7 @@ function loadObligationData(workbook) {
     oblAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
     oblSortConfig = { col: null, asc: true };
     renderObligation();
-}
-  
+  }
 
   function renderObligation() {
     const searchTerm = oblSearchInput.value.toLowerCase().trim();
@@ -1467,7 +1459,6 @@ function loadObligationData(workbook) {
   const reconCanvas = document.getElementById('reconStackedChart');
   const reconFocusCanvas = document.getElementById('reconFocusChart');
 
-  // Helper function to determine status
   function getStatus(row) {
     if (row.Balance > (row.Actual * 2)) return 'critical';
     if (row.Balance > row.Actual || row.Balance > row.Earmarked) return 'monitor';
@@ -1487,17 +1478,16 @@ function loadObligationData(workbook) {
     if (!json || json.length === 0) return;
     const headers = Object.keys(json[0]);
     const findCol = (patterns) => {
-  for (const p of patterns) {
-    const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
-    if (found) return found;
-  }
-  // Fallback: partial match
-  for (const p of patterns) {
-    const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
-    if (found) return found;
-  }
-  return null;
-};
+      for (const p of patterns) {
+        const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
+        if (found) return found;
+      }
+      for (const p of patterns) {
+        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+        if (found) return found;
+      }
+      return null;
+    };
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
@@ -1631,7 +1621,6 @@ function loadObligationData(workbook) {
     document.getElementById('kpi-recon-cats').textContent = cats.size;
     document.getElementById('kpi-recon-alloc').textContent = '₱ ' + formatCurrency(totalActual + totalBalance);
 
-    // Focus KPIs
     const monitorItems = reconFullData.filter(r => getStatus(r) === 'monitor' || getStatus(r) === 'critical').length;
     const criticalItems = reconFullData.filter(r => getStatus(r) === 'critical').length;
     const criticalTotal = reconFullData.filter(r => getStatus(r) === 'critical').reduce((s, r) => s + r.Balance, 0);
@@ -1642,7 +1631,6 @@ function loadObligationData(workbook) {
     document.getElementById('kpi-recon-critical-total').textContent = '₱ ' + formatCurrency(criticalTotal);
     document.getElementById('kpi-recon-largest-bal').textContent = '₱ ' + formatCurrency(largestBalance);
 
-    // Filtered KPIs
     const filtActual = reconFilteredData.reduce((s, r) => s + r.Actual, 0);
     const filtEarmarked = reconFilteredData.reduce((s, r) => s + r.Earmarked, 0);
     const filtBalance = reconFilteredData.reduce((s, r) => s + r.Balance, 0);
@@ -1736,7 +1724,6 @@ function loadObligationData(workbook) {
   }
 
   function updateReconFocusChart() {
-    // Show ONLY Critical items (Balance > 2x Actual)
     const criticalItems = reconFullData.filter(row => getStatus(row) === 'critical');
     const sorted = criticalItems.sort((a,b) => b.Balance - a.Balance).slice(0, 15);
     
@@ -1806,7 +1793,6 @@ function loadObligationData(workbook) {
     XLSX.writeFile(wb, `PRDP_RPCO1_Reconciliation_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // Event listeners for reconciliation
   reconSearchInput.addEventListener('input', renderReconciliation);
   reconCompFilter.addEventListener('change', renderReconciliation);
   reconCatFilter.addEventListener('change', renderReconciliation);
@@ -1845,9 +1831,6 @@ function loadObligationData(workbook) {
   const fileInputElem = document.getElementById('file-input');
   const fileStatusElem = document.getElementById('file-status');
 
-  // ================================================================
-  // SHARED: process a parsed SheetJS workbook, whatever its source
-  // ================================================================
   function processWorkbook(workbook, sourceLabel) {
     try {
       const expectedSheets = ['Earmarked Collector', 'Balance Collector', 'Obligation Collector', 'Reconciliation'];
@@ -1881,12 +1864,8 @@ function loadObligationData(workbook) {
   }
 
   // ================================================================
-  // AUTO-FETCH: pull the 4 sheets, each published individually as CSV
+  // AUTO-FETCH
   // ================================================================
-  // Each PRDP sheet must be published on its own via Google Sheets'
-  // File → Share → Publish to the web → pick the sheet from the dropdown →
-  // Publish. A URL with the right gid is NOT enough by itself — if that
-  // sheet was never selected and published individually, the link 401s.
   const CSV_SOURCES = {
     'Earmarked Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxG-JCu1hLDAs2qKIrbZd4X9FSHqGoS_DFgBhMNS7I9Z0m9CuaQlvu3_MAxHZ225U00y1nIFedm3tp/pub?gid=1008817781&single=true&output=csv',
     'Balance Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7qPMmPgOSp_dB5cnIpsWNHq4v8ZuuxcbuVog0krGbKdJ2jtgEds7p7HknUsjL7YPWMH4DhuiBCYv5/pub?output=csv',
@@ -1894,11 +1873,6 @@ function loadObligationData(workbook) {
     'Reconciliation': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQRc8z509VblkpL4UHk--jfpdnoqU-tDKi8ujrkwfXa7FOKj6Q1DqRa-uJBv7-4unAeNH7Iz9u6K66T/pub?output=csv',
   };
 
-  // Google's "publish to web" export redirects to a googleusercontent.com URL
-  // that doesn't send an Access-Control-Allow-Origin header, so a plain fetch()
-  // is often blocked by the browser. Try direct first, then a few public
-  // CORS-proxy mirrors, before giving up on that sheet. Each attempt is capped
-  // with a timeout so a slow/hung proxy can't stall the whole chain.
   const CORS_PROXIES = [
     url => url,
     url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
@@ -1940,7 +1914,6 @@ function loadObligationData(workbook) {
     const failedSheets = [];
 
     await Promise.all(sheetEntries.map(async ([sheetName, baseUrl]) => {
-      // cache-bust so we always get the latest published version, not a stale cached copy
       const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
       try {
         const csvText = await tryFetchCsvText(url, i => {
@@ -1969,8 +1942,6 @@ function loadObligationData(workbook) {
   }
 
   document.getElementById('refresh-btn').addEventListener('click', fetchFromGoogleSheet);
-
-  // Try the live source as soon as the page loads
   fetchFromGoogleSheet();
 
   // ================================================================
