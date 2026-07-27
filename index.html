@@ -1084,45 +1084,92 @@ function updateBalKPIs() {
   const oblResetBtn = document.getElementById('obl-reset-filters');
   const oblExportBtn = document.getElementById('obl-export-btn');
   const oblRowCounter = document.getElementById('obl-row-counter');
-
-  function loadObligationData(workbook) {
+  
+function loadObligationData(workbook) {
     const sheet = workbook.Sheets['Obligation Collector'];
     if (!sheet) { console.warn('Obligation sheet not found.'); return; }
     const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
     if (!json || json.length === 0) return;
     const headers = Object.keys(json[0]);
+    
+    // Improved findCol function with exact match first, then partial
     const findCol = (patterns) => {
-      for (const p of patterns) {
-        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
-        if (found) return found;
-      }
-      return null;
+        for (const p of patterns) {
+            const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase().trim());
+            if (found) return found;
+        }
+        for (const p of patterns) {
+            const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+            if (found) return found;
+        }
+        return null;
     };
+    
     const colComponent = findCol(['component']);
     const colCategory = findCol(['category']);
     const colASASheet = findCol(['asa sheet', 'asa']);
     const colPRDate = findCol(['pr date', 'PR Date', 'PR', 'pr']);
-    const colPRNo = findCol(['pr no', 'pr number']);
+    const colPRNo = findCol(['pr no', 'pr number', 'PR No', 'PR Number']);
     const colORSDate = findCol(['ors date', 'ORS Date', 'ORS', 'ors']);
-    const colORSNo = findCol(['ors no', 'ors number']);
-    const colParticulars = findCol(['particulars', 'description']);
-    const colActual = findCol(['actual obligation', 'actual']);
-    oblFullData = json.map(row => ({
-      Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
-      Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
-      ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
-      PRDate: colPRDate ? parseExcelDate(row[colPRDate]) : null,
-      PRNo: colPRNo ? String(row[colPRNo] ?? '').trim() : '',
-      ORSDate: colORSDate ? parseExcelDate(row[colORSDate]) : null,
-      ORSNo: colORSNo ? String(row[colORSNo] ?? '').trim() : '',
-      Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
-      ActualObligation: colActual ? parseNumber(row[colActual]) : 0,
-    })).filter(r => r.ActualObligation > 0 || r.Particulars);
+    const colORSNo = findCol(['ors no', 'ors number', 'ORS No', 'ORS Number']);
+    const colParticulars = findCol(['particulars', 'description', 'Particulars']);
+    const colActual = findCol(['actual obligation', 'actual', 'Actual Obligation']);
+    
+    console.log('Obligation columns found:', {
+        colPRDate, colORSDate, colPRNo, colORSNo, colParticulars, colActual
+    });
+    
+    oblFullData = json.map(row => {
+        // Parse PR Date
+        let prDate = null;
+        if (colPRDate) {
+            const rawDate = row[colPRDate];
+            prDate = parseExcelDate(rawDate);
+            // If parsing failed, try to parse as DD/MM/YYYY directly
+            if (!prDate && typeof rawDate === 'string') {
+                const parts = rawDate.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (parts) {
+                    prDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                }
+            }
+        }
+        
+        // Parse ORS Date
+        let orsDate = null;
+        if (colORSDate) {
+            const rawDate = row[colORSDate];
+            orsDate = parseExcelDate(rawDate);
+            if (!orsDate && typeof rawDate === 'string') {
+                const parts = rawDate.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (parts) {
+                    orsDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                }
+            }
+        }
+        
+        return {
+            Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
+            Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
+            ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+            PRDate: prDate,
+            PRNo: colPRNo ? String(row[colPRNo] ?? '').trim() : '',
+            ORSDate: orsDate,
+            ORSNo: colORSNo ? String(row[colORSNo] ?? '').trim() : '',
+            Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
+            ActualObligation: colActual ? parseNumber(row[colActual]) : 0,
+        };
+    }).filter(r => r.ActualObligation > 0 || r.Particulars);
     
     if (oblFullData.length === 0) {
-      console.warn('No obligation data loaded');
-      return;
+        console.warn('No obligation data loaded');
+        return;
     }
+    
+    // Log sample data to verify dates
+    console.log('Sample obligation data:', oblFullData.slice(0, 3).map(r => ({
+        PRDate: r.PRDate ? formatDate(r.PRDate) : 'null',
+        ORSDate: r.ORSDate ? formatDate(r.ORSDate) : 'null'
+    })));
     
     const comps = [...new Set(oblFullData.map(r => r.Component).filter(Boolean))];
     const cats = [...new Set(oblFullData.map(r => r.Category).filter(Boolean))];
@@ -1132,7 +1179,8 @@ function updateBalKPIs() {
     oblAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
     oblSortConfig = { col: null, asc: true };
     renderObligation();
-  }
+}
+  
 
   function renderObligation() {
     const searchTerm = oblSearchInput.value.toLowerCase().trim();
