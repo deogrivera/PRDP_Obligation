@@ -1919,7 +1919,14 @@ if (orsDateKey) {
         const csvText = await tryFetchCsvText(url, i => {
           if (i > 0) fileStatusElem.textContent = `⏳ Fetching "${sheetName}"… (proxy ${i}/${CORS_PROXIES.length - 1})`;
         });
-        const parsed = XLSX.read(csvText, { type: 'string' });
+        // raw: true stops SheetJS from auto-detecting date-like strings and
+        // silently converting them using an MM/DD/YYYY assumption. Without
+        // this, a value like "11/05/2026" gets turned into an Excel serial
+        // number for Nov 5, 2026 before parseExcelDate() ever runs — bypassing
+        // the app's forced DD/MM/YYYY parsing entirely. Keeping raw:true here
+        // keeps every cell as plain text so parseExcelDate can interpret it
+        // correctly as May 11, 2026.
+        const parsed = XLSX.read(csvText, { type: 'string', raw: true });
         loadedSheets[sheetName] = parsed.Sheets[parsed.SheetNames[0]];
       } catch (err) {
         console.warn(`Could not load "${sheetName}":`, err);
