@@ -190,6 +190,9 @@
         <div class="kpi-card filtered danger"><div class="kpi-label">Largest Balance</div><div class="kpi-value" id="kpi-bal-filt-largest" style="font-size:1.2rem;">—</div><div class="kpi-sub">single item (filtered)</div></div>
       </div>
     </div>
+    <div class="charts-row-1">
+      <div class="chart-box tall"><h3>📈 Balance (Total Oblig) vs Expected Balance</h3><canvas id="balTrendChart" width="800" height="220"></canvas></div>
+    </div>
     <div class="charts-row-2">
       <div class="chart-box tall"><h3>📊 Allocation vs Balance by Component</h3><canvas id="balAllocVsBalanceChart" width="400" height="200"></canvas></div>
       <div class="chart-box gauge"><h3>🎯 Utilization Gauge</h3><canvas id="balGaugeChart" width="400" height="180"></canvas></div>
@@ -418,7 +421,8 @@
 
   // Chart instances
   let barChart, agingChart, trendChart, asaChart, categoryChart;
-  let balCompChart, balCatChart, balAsaChart, balTopChart, balDonutChart;
+  let balCompChart, balCatChart, balAsaChart, balTopChart, balDonutChart, balTrendChart;
+  let balTrendData = [];
   let balAllocVsBalanceChart, balGaugeChart, balLowUtilChart;
   let oblCompChart, oblCatChart, oblAsaChart, oblTopChart, oblTrendChart;
   let reconStackedChart = null, reconFocusChart = null;
@@ -860,6 +864,80 @@
     balAsaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
     balSortConfig = { col: null, asc: true };
     renderBalances();
+  }
+
+  function loadBalanceTrendData(workbook) {
+    const sheet = workbook.Sheets['Balance Trend'];
+    if (!sheet) { console.warn('Balance Trend sheet not found.'); balTrendData = []; renderBalTrendChart(); return; }
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    if (!json || json.length === 0) { balTrendData = []; renderBalTrendChart(); return; }
+    const headers = Object.keys(json[0]);
+    const findCol = (patterns) => {
+      for (const p of patterns) {
+        const found = headers.find(h => h.toLowerCase().trim() === p.toLowerCase());
+        if (found) return found;
+      }
+      for (const p of patterns) {
+        const found = headers.find(h => h.toLowerCase().includes(p.toLowerCase()));
+        if (found) return found;
+      }
+      return null;
+    };
+    // Label column for the x-axis: prefer a time/period column, then fall back
+    // to whatever grouping column the sheet actually has.
+    const colLabel = findCol(['month', 'period', 'as of', 'date', 'component', 'category', 'asa sheet', 'asa', 'particulars', 'label', 'item']);
+    const colBalTotalOblig = findCol(['Balance (Total Oblig)', 'balance total oblig', 'total oblig']);
+    const colExpectedBal = findCol(['Expected Balance', 'expected bal']);
+
+    console.log('Balance Trend columns found:', { colLabel, colBalTotalOblig, colExpectedBal, headers });
+
+    balTrendData = json.map((row, i) => ({
+      Label: colLabel ? String(row[colLabel] ?? '').trim() : `Item ${i + 1}`,
+      BalanceTotalOblig: colBalTotalOblig ? parseNumber(row[colBalTotalOblig]) : 0,
+      ExpectedBalance: colExpectedBal ? parseNumber(row[colExpectedBal]) : 0,
+    })).filter(r => r.Label);
+
+    if (balTrendData.length === 0) {
+      console.warn('No Balance Trend data loaded — check column names against:', headers);
+    }
+
+    renderBalTrendChart();
+  }
+
+  function renderBalTrendChart() {
+    const canvas = document.getElementById('balTrendChart');
+    if (!canvas) return;
+    if (balTrendChart) { balTrendChart.destroy(); balTrendChart = null; }
+    if (!balTrendData || balTrendData.length === 0) {
+      balTrendChart = new Chart(canvas, {
+        type: 'line',
+        data: { labels: ['No data'], datasets: [{ label: 'Balance (Total Oblig)', data: [0] }, { label: 'Expected Balance', data: [0] }] },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+      });
+      return;
+    }
+    const labels = balTrendData.map(r => r.Label);
+    balTrendChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Balance (Total Oblig)', data: balTrendData.map(r => r.BalanceTotalOblig), borderColor: '#2a7faa', backgroundColor: 'rgba(42,127,170,0.12)', tension: 0.3, fill: true, pointRadius: 3, pointHoverRadius: 5 },
+          { label: 'Expected Balance', data: balTrendData.map(r => r.ExpectedBalance), borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.12)', tension: 0.3, fill: true, pointRadius: 3, pointHoverRadius: 5, borderDash: [6, 3] },
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ₱ ' + formatCurrency(ctx.parsed.y) } }
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: (v) => '₱ ' + formatCurrency(v) } }
+        }
+      }
+    });
   }
 
   function renderBalances() {
@@ -1841,6 +1919,7 @@ if (orsDateKey) {
 
       loadEarmarkedData(workbook);
       loadBalancesData(workbook);
+      loadBalanceTrendData(workbook);
       loadObligationData(workbook);
       loadReconciliationData(workbook);
 
@@ -1869,6 +1948,7 @@ if (orsDateKey) {
   const CSV_SOURCES = {
     'Earmarked Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxG-JCu1hLDAs2qKIrbZd4X9FSHqGoS_DFgBhMNS7I9Z0m9CuaQlvu3_MAxHZ225U00y1nIFedm3tp/pub?gid=1008817781&single=true&output=csv',
     'Balance Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7qPMmPgOSp_dB5cnIpsWNHq4v8ZuuxcbuVog0krGbKdJ2jtgEds7p7HknUsjL7YPWMH4DhuiBCYv5/pub?output=csv',
+    'Balance Trend': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQRc8z509VblkpL4UHk--jfpdnoqU-tDKi8ujrkwfXa7FOKj6Q1DqRa-uJBv7-4unAeNH7Iz9u6K66T/pub?gid=2069622791&single=true&output=csv',
     'Obligation Collector': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzWnSJrAHy8H8uVhAkC1afVy_Ggnw3ZRW_UQoyLANr3FxgDAZBbb4oyIdvG_o11gdPR67KooS9aJjs/pub?gid=1391671706&single=true&output=csv',
     'Reconciliation': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQRc8z509VblkpL4UHk--jfpdnoqU-tDKi8ujrkwfXa7FOKj6Q1DqRa-uJBv7-4unAeNH7Iz9u6K66T/pub?output=csv',
   };
@@ -2038,7 +2118,7 @@ if (orsDateKey) {
   window.chartInstances = [
     trendChart, agingChart, barChart, asaChart, categoryChart,
     balCompChart, balCatChart, balAsaChart, balTopChart, balDonutChart,
-    balAllocVsBalanceChart, balGaugeChart, balLowUtilChart,
+    balAllocVsBalanceChart, balGaugeChart, balLowUtilChart, balTrendChart,
     oblTrendChart, oblCompChart, oblCatChart, oblAsaChart, oblTopChart,
     reconStackedChart, reconFocusChart
   ];
