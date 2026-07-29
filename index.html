@@ -883,22 +883,37 @@
       }
       return null;
     };
-    // Label column for the x-axis: prefer a time/period column, then fall back
-    // to whatever grouping column the sheet actually has.
-    const colLabel = findCol(['month', 'period', 'as of', 'date', 'component', 'category', 'asa sheet', 'asa', 'particulars', 'label', 'item']);
     const colBalTotalOblig = findCol(['Balance (Total Oblig)', 'balance total oblig', 'total oblig']);
     const colExpectedBal = findCol(['Expected Balance', 'expected bal']);
 
-    console.log('Balance Trend columns found:', { colLabel, colBalTotalOblig, colExpectedBal, headers });
+    // Date column for monthly bucketing (same approach as the Earmarked / Obligation trend charts)
+    let colDate = findCol(['month', 'period', 'as of', 'date']);
+    if (!colDate) {
+      // Auto-detect: scan the first few rows for a column whose values look like dates
+      for (let i = 0; i < Math.min(5, json.length); i++) {
+        const row = json[i];
+        for (const key of headers) {
+          const val = String(row[key] || '').trim();
+          if (val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) || val.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+            colDate = key;
+            console.log(`Auto-detected Balance Trend date column: "${key}" with value: "${val}"`);
+            break;
+          }
+        }
+        if (colDate) break;
+      }
+    }
 
-    balTrendData = json.map((row, i) => ({
-      Label: colLabel ? String(row[colLabel] ?? '').trim() : `Item ${i + 1}`,
+    console.log('Balance Trend columns found:', { colDate, colBalTotalOblig, colExpectedBal, headers });
+
+    balTrendData = json.map(row => ({
+      Date: colDate ? parseExcelDate(row[colDate]) : null,
       BalanceTotalOblig: colBalTotalOblig ? parseNumber(row[colBalTotalOblig]) : 0,
       ExpectedBalance: colExpectedBal ? parseNumber(row[colExpectedBal]) : 0,
-    })).filter(r => r.Label);
+    }));
 
-    if (balTrendData.length === 0) {
-      console.warn('No Balance Trend data loaded — check column names against:', headers);
+    if (!colDate) {
+      console.warn('No date column detected in Balance Trend sheet — monthly chart will be empty. Headers were:', headers);
     }
 
     renderBalTrendChart();
@@ -908,22 +923,24 @@
     const canvas = document.getElementById('balTrendChart');
     if (!canvas) return;
     if (balTrendChart) { balTrendChart.destroy(); balTrendChart = null; }
-    if (!balTrendData || balTrendData.length === 0) {
-      balTrendChart = new Chart(canvas, {
-        type: 'line',
-        data: { labels: ['No data'], datasets: [{ label: 'Balance (Total Oblig)', data: [0] }, { label: 'Expected Balance', data: [0] }] },
-        options: { responsive: true, plugins: { legend: { display: false } } }
-      });
-      return;
-    }
-    const labels = balTrendData.map(r => r.Label);
+
+    const monthlyTotalOblig = new Array(12).fill(0);
+    const monthlyExpected = new Array(12).fill(0);
+    (balTrendData || []).forEach(row => {
+      if (row.Date) {
+        const month = row.Date.getMonth();
+        monthlyTotalOblig[month] += row.BalanceTotalOblig;
+        monthlyExpected[month] += row.ExpectedBalance;
+      }
+    });
+
     balTrendChart = new Chart(canvas, {
       type: 'line',
       data: {
-        labels,
+        labels: MONTH_NAMES,
         datasets: [
-          { label: 'Balance (Total Oblig)', data: balTrendData.map(r => r.BalanceTotalOblig), borderColor: '#2a7faa', backgroundColor: 'rgba(42,127,170,0.12)', tension: 0.3, fill: true, pointRadius: 3, pointHoverRadius: 5 },
-          { label: 'Expected Balance', data: balTrendData.map(r => r.ExpectedBalance), borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.12)', tension: 0.3, fill: true, pointRadius: 3, pointHoverRadius: 5, borderDash: [6, 3] },
+          { label: 'Balance (Total Oblig)', data: monthlyTotalOblig, borderColor: '#2a7faa', backgroundColor: 'rgba(42,127,170,0.12)', tension: 0.3, fill: true, pointBackgroundColor: '#2a7faa', pointBorderColor: '#fff', pointBorderWidth: 1, pointRadius: 4, pointHoverRadius: 6 },
+          { label: 'Expected Balance', data: monthlyExpected, borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.12)', tension: 0.3, fill: true, pointBackgroundColor: '#e67e22', pointBorderColor: '#fff', pointBorderWidth: 1, pointRadius: 4, pointHoverRadius: 6, borderDash: [6, 3] },
         ]
       },
       options: {
@@ -2096,6 +2113,7 @@ if (orsDateKey) {
   balAllocVsBalanceChart = new Chart(document.getElementById('balAllocVsBalanceChart'), { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true } });
   balGaugeChart = new Chart(document.getElementById('balGaugeChart'), { type: 'doughnut', data: { labels: [], datasets: [] }, options: { responsive: true } });
   balLowUtilChart = new Chart(document.getElementById('balLowUtilChart'), { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true } });
+  balTrendChart = new Chart(document.getElementById('balTrendChart'), { type: 'line', data: { labels: MONTH_NAMES, datasets: [{ label: 'Balance (Total Oblig)', data: new Array(12).fill(0), borderColor: '#2a7faa', backgroundColor: 'rgba(42, 127, 170, 0.1)', fill: true }, { label: 'Expected Balance', data: new Array(12).fill(0), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.1)', fill: true, borderDash: [6,3] }] }, options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } } });
   
   oblTrendChart = new Chart(document.getElementById('oblTrendChart'), { type: 'line', data: { labels: MONTH_NAMES, datasets: [{ data: new Array(12).fill(0), borderColor: '#2a7faa', backgroundColor: 'rgba(42, 127, 170, 0.1)', fill: true }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
   oblCompChart = new Chart(document.getElementById('oblCompChart'), { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true } });
