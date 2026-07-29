@@ -141,6 +141,7 @@
         <select id="component-filter"><option value="">All Components</option></select>
         <select id="category-filter"><option value="">All Categories</option></select>
         <select id="asa-filter"><option value="">All ASA</option></select>
+        <select id="type-filter"><option value="">All Types</option><option value="SP">Sub-Projects (SP)</option><option value="IOC">Incremental Operating Cost (IOC)</option></select>
         <select id="month-filter"><option value="">All Months">
           <option value="0">Jan</option><option value="1">Feb</option><option value="2">Mar</option>
           <option value="3">Apr</option><option value="4">May</option><option value="5">Jun</option>
@@ -212,6 +213,7 @@
         <select id="bal-component-filter"><option value="">All Components</option></select>
         <select id="bal-category-filter"><option value="">All Categories</option></select>
         <select id="bal-asa-filter"><option value="">All ASA</option></select>
+        <select id="bal-type-filter"><option value="">All Types</option><option value="SP">Sub-Projects (SP)</option><option value="IOC">Incremental Operating Cost (IOC)</option></select>
         <select id="bal-min-balance"><option value="">Min Balance</option><option value="1000">> ₱1,000</option><option value="10000">> ₱10,000</option><option value="100000">> ₱100,000</option><option value="1000000">> ₱1,000,000</option></select>
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
@@ -270,6 +272,7 @@
         <select id="obl-component-filter"><option value="">All Components</option></select>
         <select id="obl-category-filter"><option value="">All Categories</option></select>
         <select id="obl-asa-filter"><option value="">All ASA</option></select>
+        <select id="obl-type-filter"><option value="">All Types</option><option value="SP">Sub-Projects (SP)</option><option value="IOC">Incremental Operating Cost (IOC)</option></select>
         <select id="obl-min-oblig"><option value="">Min Obligation</option><option value="1000">> ₱1,000</option><option value="10000">> ₱10,000</option><option value="100000">> ₱100,000</option><option value="1000000">> ₱1,000,000</option></select>
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
@@ -370,6 +373,7 @@
         <select id="recon-component-filter"><option value="">All Components</option></select>
         <select id="recon-category-filter"><option value="">All Categories</option></select>
         <select id="recon-asa-filter"><option value="">All ASA</option></select>
+        <select id="recon-type-filter"><option value="">All Types</option><option value="SP">Sub-Projects (SP)</option><option value="IOC">Incremental Operating Cost (IOC)</option></select>
         <select id="recon-min-alloc"><option value="">Min Allocation</option><option value="1000">> ₱1,000</option><option value="10000">> ₱10,000</option><option value="100000">> ₱100,000</option><option value="1000000">> ₱1,000,000</option></select>
         <select id="recon-status-filter"><option value="">All Status</option><option value="monitor">⚠️ Monitor</option><option value="critical">🚨 Critical</option><option value="ok">✅ OK</option></select>
       </div>
@@ -441,6 +445,32 @@
       return parseFloat(cleaned) || 0;
     }
     return 0;
+  }
+
+  // ASA Sheets that fall under Sub-Projects (SP). Everything else is
+  // classified as Incremental Operating Cost (IOC).
+  const SP_ASA_LIST = [
+    'ASA No. 2026-000047 (LP)',
+    'ASA No. 2026-000048 (GOP)',
+    'ASA No. 2026-000065 (LP)',
+    'ASA No. 2026-000066 (GOP)',
+    'ASA No. 2026-000159 (LP)',
+    'ASA No. 2026-000160 (GOP)',
+  ];
+  // Normalize to "NUMBER-FUND" (e.g. "2026-000047-LP") so matching survives
+  // minor formatting differences ("ASA No." vs "ASA", spacing, case, etc.)
+  function normalizeAsaKey(value) {
+    if (!value) return null;
+    const str = String(value).toUpperCase();
+    const num = str.match(/(\d{4}-\d{6})/);
+    const fund = str.match(/\b(LP|GOP)\b/);
+    if (!num) return null;
+    return num[1] + (fund ? '-' + fund[1] : '');
+  }
+  const SP_ASA_KEYS = new Set(SP_ASA_LIST.map(normalizeAsaKey).filter(Boolean));
+  function getSPIOC(asaSheetValue) {
+    const key = normalizeAsaKey(asaSheetValue);
+    return (key && SP_ASA_KEYS.has(key)) ? 'SP' : 'IOC';
   }
 
  function parseExcelDate(value) {
@@ -520,6 +550,7 @@
   const compFilter = document.getElementById('component-filter');
   const catFilter = document.getElementById('category-filter');
   const asaFilter = document.getElementById('asa-filter');
+  const typeFilter = document.getElementById('type-filter');
   const monthFilter = document.getElementById('month-filter');
   const agingFilter = document.getElementById('aging-filter');
   const resetBtn = document.getElementById('reset-filters');
@@ -552,6 +583,7 @@
         Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
         Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
         ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+        SPIOC: getSPIOC(colASASheet ? row[colASASheet] : ''),
         PRDate: prDate,
         PRNo: colPRNo ? String(row[colPRNo] ?? '').trim() : '',
         Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
@@ -578,6 +610,7 @@
   function renderEarmarked() {
     const searchTerm = searchInput.value.toLowerCase().trim();
     const compVal = compFilter.value, catVal = catFilter.value, asaVal = asaFilter.value;
+    const typeVal = typeFilter.value;
     const monthVal = monthFilter.value, agingVal = agingFilter.value;
 
     let temp = fullData.filter(row => {
@@ -585,6 +618,7 @@
       const matchComp = !compVal || row.Component === compVal;
       const matchCat = !catVal || row.Category === catVal;
       const matchAsa = !asaVal || row.ASASheet === asaVal;
+      const matchType = !typeVal || row.SPIOC === typeVal;
       let matchMonth = true;
       if (monthVal !== '') {
         const d = row._prDateObj;
@@ -598,7 +632,7 @@
         else if (agingVal === '61-90') matchAging = age !== null && age > 60 && age <= 90;
         else if (agingVal === '90+') matchAging = age !== null && age > 90;
       }
-      return matchSearch && matchComp && matchCat && matchAsa && matchMonth && matchAging;
+      return matchSearch && matchComp && matchCat && matchAsa && matchType && matchMonth && matchAging;
     });
     filteredData = temp;
     if (sortConfig.col !== null) {
@@ -782,10 +816,11 @@
   compFilter.addEventListener('change', renderEarmarked);
   catFilter.addEventListener('change', renderEarmarked);
   asaFilter.addEventListener('change', renderEarmarked);
+  typeFilter.addEventListener('change', renderEarmarked);
   monthFilter.addEventListener('change', renderEarmarked);
   agingFilter.addEventListener('change', renderEarmarked);
   resetBtn.addEventListener('click', function() {
-    searchInput.value = ''; compFilter.value = ''; catFilter.value = ''; asaFilter.value = ''; monthFilter.value = ''; agingFilter.value = '';
+    searchInput.value = ''; compFilter.value = ''; catFilter.value = ''; asaFilter.value = ''; typeFilter.value = ''; monthFilter.value = ''; agingFilter.value = '';
     sortConfig = { col: null, asc: true };
     renderEarmarked();
   });
@@ -813,6 +848,7 @@
   const balCompFilter = document.getElementById('bal-component-filter');
   const balCatFilter = document.getElementById('bal-category-filter');
   const balAsaFilter = document.getElementById('bal-asa-filter');
+  const balTypeFilter = document.getElementById('bal-type-filter');
   const balMinBalance = document.getElementById('bal-min-balance');
   const balResetBtn = document.getElementById('bal-reset-filters');
   const balExportBtn = document.getElementById('bal-export-btn');
@@ -842,6 +878,7 @@
       Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
       Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
       ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+      SPIOC: getSPIOC(colASASheet ? row[colASASheet] : ''),
       Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
       Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
       Balance: colBalance ? parseNumber(row[colBalance]) : 0,
@@ -865,15 +902,17 @@
   function renderBalances() {
     const searchTerm = balSearchInput.value.toLowerCase().trim();
     const compVal = balCompFilter.value, catVal = balCatFilter.value, asaVal = balAsaFilter.value;
+    const typeVal = balTypeFilter.value;
     const minBal = balMinBalance.value;
     let temp = balFullData.filter(row => {
       const matchSearch = !searchTerm || (row.Particulars && row.Particulars.toLowerCase().includes(searchTerm));
       const matchComp = !compVal || row.Component === compVal;
       const matchCat = !catVal || row.Category === catVal;
       const matchAsa = !asaVal || row.ASASheet === asaVal;
+      const matchType = !typeVal || row.SPIOC === typeVal;
       let matchMin = true;
       if (minBal !== '') matchMin = row.Balance >= parseFloat(minBal);
-      return matchSearch && matchComp && matchCat && matchAsa && matchMin;
+      return matchSearch && matchComp && matchCat && matchAsa && matchType && matchMin;
     });
     balFilteredData = temp;
     if (balSortConfig.col !== null) {
@@ -1045,9 +1084,10 @@
   balCompFilter.addEventListener('change', renderBalances);
   balCatFilter.addEventListener('change', renderBalances);
   balAsaFilter.addEventListener('change', renderBalances);
+  balTypeFilter.addEventListener('change', renderBalances);
   balMinBalance.addEventListener('change', renderBalances);
   balResetBtn.addEventListener('click', function() {
-    balSearchInput.value = ''; balCompFilter.value = ''; balCatFilter.value = ''; balAsaFilter.value = ''; balMinBalance.value = '';
+    balSearchInput.value = ''; balCompFilter.value = ''; balCatFilter.value = ''; balAsaFilter.value = ''; balTypeFilter.value = ''; balMinBalance.value = '';
     balSortConfig = { col: null, asc: true };
     renderBalances();
   });
@@ -1075,6 +1115,7 @@
   const oblCompFilter = document.getElementById('obl-component-filter');
   const oblCatFilter = document.getElementById('obl-category-filter');
   const oblAsaFilter = document.getElementById('obl-asa-filter');
+  const oblTypeFilter = document.getElementById('obl-type-filter');
   const oblMinOblig = document.getElementById('obl-min-oblig');
   const oblResetBtn = document.getElementById('obl-reset-filters');
   const oblExportBtn = document.getElementById('obl-export-btn');
@@ -1201,6 +1242,7 @@ if (orsDateKey) {
             Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
             Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
             ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+            SPIOC: getSPIOC(colASASheet ? row[colASASheet] : ''),
             PRDate: prDate,
             PRNo: colPRNo ? String(row[colPRNo] ?? '').trim() : '',
             ORSDate: orsDate,
@@ -1234,15 +1276,17 @@ if (orsDateKey) {
   function renderObligation() {
     const searchTerm = oblSearchInput.value.toLowerCase().trim();
     const compVal = oblCompFilter.value, catVal = oblCatFilter.value, asaVal = oblAsaFilter.value;
+    const typeVal = oblTypeFilter.value;
     const minOblig = oblMinOblig.value;
     let temp = oblFullData.filter(row => {
       const matchSearch = !searchTerm || (row.Particulars && row.Particulars.toLowerCase().includes(searchTerm));
       const matchComp = !compVal || row.Component === compVal;
       const matchCat = !catVal || row.Category === catVal;
       const matchAsa = !asaVal || row.ASASheet === asaVal;
+      const matchType = !typeVal || row.SPIOC === typeVal;
       let matchMin = true;
       if (minOblig !== '') matchMin = row.ActualObligation >= parseFloat(minOblig);
-      return matchSearch && matchComp && matchCat && matchAsa && matchMin;
+      return matchSearch && matchComp && matchCat && matchAsa && matchType && matchMin;
     });
     oblFilteredData = temp;
     if (oblSortConfig.col !== null) {
@@ -1421,9 +1465,10 @@ if (orsDateKey) {
   oblCompFilter.addEventListener('change', renderObligation);
   oblCatFilter.addEventListener('change', renderObligation);
   oblAsaFilter.addEventListener('change', renderObligation);
+  oblTypeFilter.addEventListener('change', renderObligation);
   oblMinOblig.addEventListener('change', renderObligation);
   oblResetBtn.addEventListener('click', function() {
-    oblSearchInput.value = ''; oblCompFilter.value = ''; oblCatFilter.value = ''; oblAsaFilter.value = ''; oblMinOblig.value = '';
+    oblSearchInput.value = ''; oblCompFilter.value = ''; oblCatFilter.value = ''; oblAsaFilter.value = ''; oblTypeFilter.value = ''; oblMinOblig.value = '';
     oblSortConfig = { col: null, asc: true };
     renderObligation();
   });
@@ -1451,6 +1496,7 @@ if (orsDateKey) {
   const reconCompFilter = document.getElementById('recon-component-filter');
   const reconCatFilter = document.getElementById('recon-category-filter');
   const reconAsaFilter = document.getElementById('recon-asa-filter');
+  const reconTypeFilter = document.getElementById('recon-type-filter');
   const reconMinAlloc = document.getElementById('recon-min-alloc');
   const reconStatusFilter = document.getElementById('recon-status-filter');
   const reconResetBtn = document.getElementById('recon-reset-filters');
@@ -1498,6 +1544,7 @@ if (orsDateKey) {
       Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
       Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
       ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
+      SPIOC: getSPIOC(colASASheet ? row[colASASheet] : ''),
       Actual: colActual ? parseNumber(row[colActual]) : 0,
       Earmarked: colEarmarked ? parseNumber(row[colEarmarked]) : 0,
       Balance: colBalance ? parseNumber(row[colBalance]) : 0,
@@ -1523,6 +1570,7 @@ if (orsDateKey) {
     const compVal = reconCompFilter.value;
     const catVal = reconCatFilter.value;
     const asaVal = reconAsaFilter.value;
+    const typeVal = reconTypeFilter.value;
     const minAllocVal = reconMinAlloc.value;
     const statusVal = reconStatusFilter.value;
 
@@ -1531,6 +1579,7 @@ if (orsDateKey) {
       const matchComp = !compVal || row.Component === compVal;
       const matchCat = !catVal || row.Category === catVal;
       const matchAsa = !asaVal || row.ASASheet === asaVal;
+      const matchType = !typeVal || row.SPIOC === typeVal;
       
       let matchMin = true;
       if (minAllocVal !== '') {
@@ -1544,7 +1593,7 @@ if (orsDateKey) {
       else if (statusVal === 'critical') matchStatus = status === 'critical';
       else if (statusVal === 'ok') matchStatus = status === 'ok';
       
-      return matchSearch && matchComp && matchCat && matchAsa && matchMin && matchStatus;
+      return matchSearch && matchComp && matchCat && matchAsa && matchType && matchMin && matchStatus;
     });
 
     if (reconSortConfig.col !== null) {
@@ -1797,6 +1846,7 @@ if (orsDateKey) {
   reconCompFilter.addEventListener('change', renderReconciliation);
   reconCatFilter.addEventListener('change', renderReconciliation);
   reconAsaFilter.addEventListener('change', renderReconciliation);
+  reconTypeFilter.addEventListener('change', renderReconciliation);
   reconMinAlloc.addEventListener('change', renderReconciliation);
   reconStatusFilter.addEventListener('change', renderReconciliation);
   reconResetBtn.addEventListener('click', function() {
@@ -1804,6 +1854,7 @@ if (orsDateKey) {
     reconCompFilter.value = ''; 
     reconCatFilter.value = '';
     reconAsaFilter.value = ''; 
+    reconTypeFilter.value = '';
     reconMinAlloc.value = ''; 
     reconStatusFilter.value = '';
     reconSortConfig = { col: null, asc: true };
