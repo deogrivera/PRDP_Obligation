@@ -557,7 +557,7 @@
   const exportBtn = document.getElementById('export-btn');
   const rowCounter = document.getElementById('row-counter');
 
-  function loadEarmarkedData(workbook) {
+ function loadEarmarkedData(workbook) {
     const sheet = workbook.Sheets['Earmarked Collector'];
     if (!sheet) { console.warn('Earmarked sheet not found.'); return; }
     const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
@@ -577,13 +577,23 @@
     const colPRNo = findCol(['pr no', 'pr number']);
     const colParticulars = findCol(['particulars', 'description']);
     const colEarmarked = findCol(['earmarked']);
+    
     fullData = json.map(row => {
       const prDate = colPRDate ? parseExcelDate(row[colPRDate]) : null;
+      const asaValue = colASASheet ? String(row[colASASheet] ?? '').trim() : '';
+      
+      // SIMPLIFIED SPIOC detection - check if ASA contains LP or GOP
+      let spioc = 'IOC';
+      const asaUpper = asaValue.toUpperCase();
+      if (asaUpper.includes('LP') || asaUpper.includes('GOP')) {
+        spioc = 'SP';
+      }
+      
       return {
         Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
         Category: colCategory ? String(row[colCategory] ?? '').trim() : '',
-        ASASheet: colASASheet ? String(row[colASASheet] ?? '').trim() : '',
-        SPIOC: getSPIOC(colASASheet ? row[colASASheet] : ''),
+        ASASheet: asaValue,
+        SPIOC: spioc,  // Use simplified detection
         PRDate: prDate,
         PRNo: colPRNo ? String(row[colPRNo] ?? '').trim() : '',
         Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
@@ -592,24 +602,19 @@
       };
     }).filter(r => r.Earmarked > 0 || r.Particulars);
     
+    // Debug: Check SPIOC values
+    console.log('SPIOC distribution:', {
+      total: fullData.length,
+      SP: fullData.filter(r => r.SPIOC === 'SP').length,
+      IOC: fullData.filter(r => r.SPIOC === 'IOC').length,
+      sample: fullData.slice(0, 3).map(r => ({ ASASheet: r.ASASheet, SPIOC: r.SPIOC }))
+    });
+    
     if (fullData.length === 0) {
       console.warn('No earmarked data loaded');
       return;
     }
-
-    // --- DIAGNOSTIC: SP/IOC classification check for Earmarked Collector ---
-    // Remove this block once the Type filter is confirmed working.
-    {
-      const spCount = fullData.filter(r => r.SPIOC === 'SP').length;
-      const iocCount = fullData.filter(r => r.SPIOC === 'IOC').length;
-      const uniqueAsa = [...new Set(fullData.map(r => r.ASASheet).filter(Boolean))];
-      console.log(`[Earmarked SP/IOC check] header detected: "${colASASheet}" | SP=${spCount} IOC=${iocCount} | unique ASA values:`, uniqueAsa);
-      if (spCount === 0) {
-        console.warn('[Earmarked SP/IOC check] No rows classified as SP. Compare the "unique ASA values" list above against SP_ASA_LIST to see the format mismatch.');
-      }
-    }
-    // --- END DIAGNOSTIC ---
-
+    
     const comps = [...new Set(fullData.map(r => r.Component).filter(Boolean))];
     const cats = [...new Set(fullData.map(r => r.Category).filter(Boolean))];
     const asas = [...new Set(fullData.map(r => r.ASASheet).filter(Boolean))];
@@ -618,8 +623,7 @@
     asaFilter.innerHTML = '<option value="">All ASA</option>' + asas.map(a => `<option value="${a}">${a}</option>`).join('');
     sortConfig = { col: null, asc: true };
     renderEarmarked();
-  }
-
+}
   function renderEarmarked() {
     const searchTerm = searchInput.value.toLowerCase().trim();
     const compVal = compFilter.value, catVal = catFilter.value, asaVal = asaFilter.value;
