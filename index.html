@@ -596,7 +596,20 @@
       console.warn('No earmarked data loaded');
       return;
     }
-    
+
+    // --- DIAGNOSTIC: SP/IOC classification check for Earmarked Collector ---
+    // Remove this block once the Type filter is confirmed working.
+    {
+      const spCount = fullData.filter(r => r.SPIOC === 'SP').length;
+      const iocCount = fullData.filter(r => r.SPIOC === 'IOC').length;
+      const uniqueAsa = [...new Set(fullData.map(r => r.ASASheet).filter(Boolean))];
+      console.log(`[Earmarked SP/IOC check] header detected: "${colASASheet}" | SP=${spCount} IOC=${iocCount} | unique ASA values:`, uniqueAsa);
+      if (spCount === 0) {
+        console.warn('[Earmarked SP/IOC check] No rows classified as SP. Compare the "unique ASA values" list above against SP_ASA_LIST to see the format mismatch.');
+      }
+    }
+    // --- END DIAGNOSTIC ---
+
     const comps = [...new Set(fullData.map(r => r.Component).filter(Boolean))];
     const cats = [...new Set(fullData.map(r => r.Category).filter(Boolean))];
     const asas = [...new Set(fullData.map(r => r.ASASheet).filter(Boolean))];
@@ -2041,11 +2054,15 @@ if (orsDateKey) {
       document.getElementById('tab-' + this.dataset.tab).classList.add('active');
       
       setTimeout(() => {
-        if (window.chartInstances) {
-          window.chartInstances.forEach(chart => {
-            if (chart && chart.resize) chart.resize();
-          });
-        }
+        // Read the live chart variables at resize time instead of a stale
+        // snapshot, since each reload destroys and reassigns these.
+        [trendChart, agingChart, barChart, asaChart, categoryChart,
+         balCompChart, balCatChart, balAsaChart, balTopChart, balDonutChart,
+         balAllocVsBalanceChart, balGaugeChart, balLowUtilChart,
+         oblTrendChart, oblCompChart, oblCatChart, oblAsaChart, oblTopChart,
+         reconStackedChart, reconFocusChart].forEach(chart => {
+          if (chart && chart.canvas && chart.resize) chart.resize();
+        });
       }, 100);
     });
   });
