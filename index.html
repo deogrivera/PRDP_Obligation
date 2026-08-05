@@ -84,6 +84,36 @@
     .critical-row:hover td { background: #fce4e3 !important; }
     @media (max-width: 900px) { .charts-row-2 { grid-template-columns: 1fr; } }
     .sort-indicator { font-size: 0.7rem; margin-left: 4px; }
+
+    /* ---------------- AI Chat Assistant ---------------- */
+    .chat-toggle-btn { position: fixed; bottom: 24px; right: 24px; width: 58px; height: 58px; border-radius: 50%; background: #1a4970; color: white; border: none; font-size: 1.5rem; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.3); z-index: 1000; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+    .chat-toggle-btn:hover { background: #0d3553; transform: scale(1.06); }
+    .chat-panel { position: fixed; bottom: 96px; right: 24px; width: 380px; max-width: calc(100vw - 32px); height: 540px; max-height: calc(100vh - 140px); background: white; border-radius: 20px; box-shadow: 0 14px 44px rgba(0,0,0,0.28); display: none; flex-direction: column; overflow: hidden; z-index: 1000; border: 1px solid #dce6f0; }
+    .chat-panel.open { display: flex; }
+    .chat-header { background: #1a4970; color: white; padding: 14px 18px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .chat-header .title { font-weight: 700; font-size: 0.95rem; }
+    .chat-header .sub { font-size: 0.68rem; font-weight: 400; opacity: 0.85; margin-top: 3px; }
+    .chat-header button { background: transparent; border: none; color: white; font-size: 1.15rem; cursor: pointer; opacity: 0.85; line-height: 1; }
+    .chat-header button:hover { opacity: 1; }
+    .chat-setup { padding: 12px 14px; font-size: 0.75rem; color: #2c5778; background: #eef4fa; border-bottom: 1px solid #dce6f0; }
+    .chat-setup input { width: 100%; padding: 6px 10px; border-radius: 10px; border: 1px solid #cbdae8; font-size: 0.75rem; margin-top: 6px; box-sizing: border-box; }
+    .chat-setup .row { display: flex; gap: 6px; margin-top: 6px; }
+    .chat-setup button { background: #1a4970; color: white; border: none; padding: 5px 14px; border-radius: 10px; cursor: pointer; font-size: 0.72rem; white-space: nowrap; }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #f7fafd; }
+    .chat-msg { max-width: 88%; padding: 9px 13px; border-radius: 16px; font-size: 0.83rem; line-height: 1.45; white-space: pre-wrap; }
+    .chat-msg.user { align-self: flex-end; background: #1a4970; color: white; border-bottom-right-radius: 4px; }
+    .chat-msg.bot { align-self: flex-start; background: #e2ecf7; color: #12344d; border-bottom-left-radius: 4px; }
+    .chat-msg.error { align-self: flex-start; background: #fde8e8; color: #a03131; }
+    .chat-msg.typing { align-self: flex-start; background: #e2ecf7; color: #4a6f8c; font-style: italic; }
+    .chat-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+    .chat-quick button { background: white; border: 1px solid #b7ccdf; border-radius: 40px; padding: 4px 12px; font-size: 0.7rem; color: #1a4970; cursor: pointer; }
+    .chat-quick button:hover { background: #e8f0f8; }
+    .chat-input-row { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e3ebf3; background: white; }
+    .chat-input-row textarea { flex: 1; resize: none; border: 1px solid #cbdae8; border-radius: 14px; padding: 8px 12px; font-size: 0.83rem; font-family: inherit; max-height: 80px; }
+    .chat-input-row textarea:focus { outline: 2px solid #2a7faa; border-color: transparent; }
+    .chat-input-row button { background: #1a7a4a; color: white; border: none; border-radius: 14px; padding: 0 16px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+    .chat-input-row button:disabled { background: #a0b8c9; cursor: not-allowed; }
+    @media (max-width: 480px) { .chat-panel { right: 12px; bottom: 84px; width: calc(100vw - 24px); } .chat-toggle-btn { right: 16px; bottom: 16px; } }
   </style>
 </head>
 <body>
@@ -408,6 +438,44 @@
       </div>
       <div class="developer-credit">System Developed by <strong>DEO G. RIVERA</strong></div>
     </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     AI CHAT ASSISTANT (Gemini, via Apps Script proxy)
+     ================================================================ -->
+<button class="chat-toggle-btn" id="chat-toggle-btn" title="Ask about this data">💬</button>
+
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-header">
+    <div>
+      <div class="title">🤖 PRDP Data Assistant</div>
+      <div class="sub">Answers using the data currently loaded in this dashboard</div>
+    </div>
+    <button id="chat-close-btn" title="Close">✕</button>
+  </div>
+
+  <div class="chat-setup" id="chat-setup">
+    To enable the assistant, paste your Apps Script Web App URL below (one-time setup — see the accompanying setup notes for how to create it). Your Gemini API key stays private on the server side; it is never stored in this page.
+    <div class="row">
+      <input type="text" id="chat-endpoint-input" placeholder="https://script.google.com/macros/s/.../exec">
+      <button id="chat-endpoint-save">Save</button>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-msg bot">Hi! I can answer questions about the Earmarked, Balances, Obligation, and Reconciliation data currently loaded — totals, critical items, top components, trends, and more. What would you like to know?</div>
+  </div>
+
+  <div class="chat-quick" id="chat-quick">
+    <button data-q="Summarize the current status across all four tabs.">Summarize all tabs</button>
+    <button data-q="Which items are marked CRITICAL in Reconciliation, and why?">Critical items</button>
+    <button data-q="Which component has the largest remaining balance?">Largest balance</button>
+  </div>
+
+  <div class="chat-input-row">
+    <textarea id="chat-input" rows="1" placeholder="Ask about the data..."></textarea>
+    <button id="chat-send-btn">Send</button>
   </div>
 </div>
 
@@ -2113,6 +2181,188 @@ if (orsDateKey) {
 
   console.log('Dashboard ready. Upload an Excel file to get started.');
   console.log('💡 Status definitions: CRITICAL (Balance > 2x Actual), MONITOR (Balance > Actual or Earmarked), OK (all good)');
+
+  // ================================================================
+  // AI CHAT ASSISTANT (Gemini via Apps Script proxy)
+  // ================================================================
+  // How this works:
+  //  1. This page NEVER holds a Gemini API key. It only knows the URL of
+  //     a Google Apps Script Web App you deploy yourself.
+  //  2. On send, it builds a compact JSON summary of whatever data is
+  //     currently loaded (KPIs, top items, critical items — not the full
+  //     raw row dump, to keep the request small) and POSTs it, along with
+  //     the user's question, to that Apps Script URL.
+  //  3. The Apps Script holds the real Gemini API key in its Script
+  //     Properties and forwards the request to Gemini, returning just the
+  //     answer text. See "PRDP Chatbot - Apps Script setup.gs" for the
+  //     code to deploy — paste the deployment URL into the box that
+  //     appears the first time you open the chat.
+  const CHAT_ENDPOINT_KEY = 'prdp_chat_endpoint_url';
+  let chatEndpoint = localStorage.getItem(CHAT_ENDPOINT_KEY) || '';
+  let chatHistory = []; // [{role:'user'|'model', text:'...'}]
+  let chatBusy = false;
+
+  const chatToggleBtn = document.getElementById('chat-toggle-btn');
+  const chatPanel = document.getElementById('chat-panel');
+  const chatCloseBtn = document.getElementById('chat-close-btn');
+  const chatSetup = document.getElementById('chat-setup');
+  const chatEndpointInput = document.getElementById('chat-endpoint-input');
+  const chatEndpointSave = document.getElementById('chat-endpoint-save');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatInput = document.getElementById('chat-input');
+  const chatSendBtn = document.getElementById('chat-send-btn');
+  const chatQuick = document.getElementById('chat-quick');
+
+  function refreshChatSetupVisibility() {
+    chatSetup.style.display = chatEndpoint ? 'none' : 'block';
+    if (chatEndpoint) chatEndpointInput.value = chatEndpoint;
+  }
+  refreshChatSetupVisibility();
+
+  chatToggleBtn.addEventListener('click', () => {
+    chatPanel.classList.toggle('open');
+    if (chatPanel.classList.contains('open')) chatInput.focus();
+  });
+  chatCloseBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
+
+  chatEndpointSave.addEventListener('click', () => {
+    const url = chatEndpointInput.value.trim();
+    if (!url) return;
+    chatEndpoint = url;
+    localStorage.setItem(CHAT_ENDPOINT_KEY, url);
+    refreshChatSetupVisibility();
+  });
+
+  chatQuick.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-q]');
+    if (!btn) return;
+    chatInput.value = btn.dataset.q;
+    sendChatMessage();
+  });
+
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+  chatSendBtn.addEventListener('click', sendChatMessage);
+
+  function addChatBubble(text, cls) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + cls;
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
+  // Compact summary of a data array: totals, breakdown by Component, and
+  // the top few rows by the given value field. Keeps the payload small
+  // instead of shipping every row to Gemini.
+  function summarizeArray(rows, valueField, extraFields) {
+    if (!rows || rows.length === 0) return { rowCount: 0 };
+    const byComponent = {};
+    let total = 0;
+    rows.forEach(r => {
+      const v = Number(r[valueField]) || 0;
+      total += v;
+      const key = r.Component || 'Unspecified';
+      byComponent[key] = (byComponent[key] || 0) + v;
+    });
+    const top = rows.slice().sort((a, b) => (Number(b[valueField]) || 0) - (Number(a[valueField]) || 0)).slice(0, 8)
+      .map(r => {
+        const o = { Component: r.Component, Category: r.Category, ASASheet: r.ASASheet, Particulars: r.Particulars, [valueField]: Number(r[valueField]) || 0 };
+        (extraFields || []).forEach(f => { if (r[f] !== undefined) o[f] = r[f] instanceof Date ? formatDate(r[f]) : r[f]; });
+        return o;
+      });
+    return { rowCount: rows.length, total, byComponent, topRows: top };
+  }
+
+  function buildDashboardContext() {
+    const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'earmarked';
+    const context = { activeTab, generatedAt: new Date().toISOString() };
+
+    if (fullData.length) {
+      context.earmarked = summarizeArray(filteredData.length ? filteredData : fullData, 'Earmarked', ['PRNo']);
+    }
+    if (balFullData.length) {
+      const src = balFilteredData.length ? balFilteredData : balFullData;
+      context.balances = summarizeArray(src, 'Balance', ['Allocation']);
+      context.balances.totalAllocation = src.reduce((s, r) => s + (Number(r.Allocation) || 0), 0);
+    }
+    if (oblFullData.length) {
+      context.obligation = summarizeArray(oblFilteredData.length ? oblFilteredData : oblFullData, 'ActualObligation', ['ORSNo', 'PRNo']);
+    }
+    if (reconFullData.length) {
+      const src = reconFilteredData.length ? reconFilteredData : reconFullData;
+      const withStatus = src.map(r => ({ ...r, _status: getStatus(r) }));
+      context.reconciliation = {
+        rowCount: src.length,
+        totalActual: src.reduce((s, r) => s + (Number(r.Actual) || 0), 0),
+        totalEarmarked: src.reduce((s, r) => s + (Number(r.Earmarked) || 0), 0),
+        totalBalance: src.reduce((s, r) => s + (Number(r.Balance) || 0), 0),
+        criticalCount: withStatus.filter(r => r._status === 'critical').length,
+        monitorCount: withStatus.filter(r => r._status === 'monitor').length,
+        okCount: withStatus.filter(r => r._status === 'ok').length,
+        criticalItems: withStatus.filter(r => r._status === 'critical').slice(0, 8)
+          .map(r => ({ Component: r.Component, Category: r.Category, ASASheet: r.ASASheet, Particulars: r.Particulars, Actual: r.Actual, Earmarked: r.Earmarked, Balance: r.Balance })),
+      };
+    }
+    if (!fullData.length && !balFullData.length && !oblFullData.length && !reconFullData.length) {
+      context.note = 'No data has been loaded into the dashboard yet.';
+    }
+    return context;
+  }
+
+  async function sendChatMessage() {
+    const question = chatInput.value.trim();
+    if (!question || chatBusy) return;
+
+    if (!chatEndpoint) {
+      refreshChatSetupVisibility();
+      addChatBubble('Please save your Apps Script endpoint URL above first — see the setup notes for how to create one.', 'error');
+      return;
+    }
+
+    addChatBubble(question, 'user');
+    chatInput.value = '';
+    chatBusy = true;
+    chatSendBtn.disabled = true;
+    const typingBubble = addChatBubble('Thinking…', 'typing');
+
+    try {
+      const context = buildDashboardContext();
+      const resp = await fetch(chatEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight against Apps Script
+        body: JSON.stringify({
+          action: 'chat',
+          question,
+          context,
+          history: chatHistory.slice(-8), // last few turns for continuity
+        }),
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      typingBubble.remove();
+      if (data.error) {
+        addChatBubble('⚠️ ' + data.error, 'error');
+      } else {
+        const answer = data.answer || '(No answer returned.)';
+        addChatBubble(answer, 'bot');
+        chatHistory.push({ role: 'user', text: question });
+        chatHistory.push({ role: 'model', text: answer });
+      }
+    } catch (err) {
+      typingBubble.remove();
+      console.error('Chat error:', err);
+      addChatBubble('⚠️ Could not reach the assistant: ' + err.message + '. Check that the Apps Script URL is correct and deployed with "Anyone" access.', 'error');
+    } finally {
+      chatBusy = false;
+      chatSendBtn.disabled = false;
+    }
+  }
 </script>
 </body>
 </html>
