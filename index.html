@@ -509,8 +509,11 @@
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
     if (typeof val === 'string') {
-      const cleaned = val.replace(/[₱,]/g, '').trim();
-      return parseFloat(cleaned) || 0;
+      let cleaned = val.replace(/[₱,\s]/g, '').trim();
+      let neg = false;
+      if (/^\(.*\)$/.test(cleaned)) { neg = true; cleaned = cleaned.slice(1, -1); }   // (1,234.56) -> -1234.56
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? 0 : (neg ? -n : n);
     }
     return 0;
   }
@@ -993,7 +996,12 @@
     const colASASheet = findCol(['asa sheet', 'asa']);
     const colParticulars = findCol(['particulars', 'description']);
     const colAllocation = findCol(['allocation']);
-    const colBalance = findCol(['Balance (Alloc less Total Oblig)']);
+    // Column F of Balance Collector: "Balance (Alloc less Total Oblig...)". Match on the start of the
+    // header (ignores how the word "Obligation" ends, spacing and case) and skip the "Total Balance..." label cell.
+    const normH = h => String(h).toLowerCase().replace(/\s+/g, ' ').trim();
+    const colBalance = headers.find(h => !normH(h).startsWith('total') && normH(h).includes('balance (alloc less total oblig'))
+      || headers.find(h => !normH(h).startsWith('total') && normH(h).includes('balance') && normH(h).includes('total oblig'))
+      || null;
     
     balFullData = json.map(row => ({
       Component: colComponent ? String(row[colComponent] ?? '').trim() : '',
@@ -1003,7 +1011,10 @@
       Particulars: colParticulars ? String(row[colParticulars] ?? '').trim() : '',
       Allocation: colAllocation ? parseNumber(row[colAllocation]) : 0,
       Balance: colBalance ? parseNumber(row[colBalance]) : 0,
-    })).filter(r => r.Allocation > 0 || r.Balance > 0);
+    })).filter(r => r.Allocation !== 0 || r.Balance !== 0);
+    console.log('[Balances] Balance column used:', JSON.stringify(colBalance), '| rows:', balFullData.length,
+      '| sum of Balance:', balFullData.reduce((t, r) => t + r.Balance, 0).toFixed(2));
+    if (!colBalance) console.warn('[Balances] No "Balance (Alloc less Total Oblig...)" column found. Headers seen:', headers);
     
     if (balFullData.length === 0) {
       console.warn('No balance data loaded');
