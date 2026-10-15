@@ -541,56 +541,72 @@
     return (key && SP_ASA_KEYS.has(key)) ? 'SP' : 'IOC';
   }
 
- function parseExcelDate(value) {
-    if (!value) return null;
-    if (value instanceof Date && !isNaN(value)) return value;
-    
-    // Handle Excel serial numbers
-    if (typeof value === 'number' && value > 59) {
-        const excelEpoch = new Date(1899, 11, 30);
-        return new Date(excelEpoch.getTime() + value * 86400000);
+  // ---------- Strict date parser ----------
+  // Accepts: Date objects, Excel serial numbers, "September 18, 2026", "18 Sep 2026",
+  // "18/09/2026" (DD/MM/YYYY), "18-09-2026", "2026-09-18".
+  // Never falls back to new Date(string), because that silently invents a year
+  // (e.g. "Sep 18" -> 2001, "Sep 18, 00" -> 2000). Anything it can't read with a
+  // full 4-digit year, or that lands outside DATE_MIN_YEAR..DATE_MAX_YEAR, returns
+  // null and is logged to the console as "[Date rejected]".
+  const DATE_MIN_YEAR = 2020, DATE_MAX_YEAR = 2035;
+  const DATE_REJECTS = [];
+  const MONTH_IDX = { jan:0, january:0, feb:1, february:1, mar:2, march:2, apr:3, april:3, may:4,
+    jun:5, june:5, jul:6, july:6, aug:7, august:7, sep:8, sept:8, september:8,
+    oct:9, october:9, nov:10, november:10, dec:11, december:11 };
+
+  function parseExcelDate(value) {
+    if (value === null || value === undefined || value === '') return null;
+
+    const reject = (why) => {
+      DATE_REJECTS.push({ raw: value, why });
+      console.warn('[Date rejected]', JSON.stringify(value), '-', why);
+      return null;
+    };
+    const build = (y, m, d) => {            // m is 0-based; validates, never rolls over
+      const dt = new Date(y, m, d);
+      if (dt.getFullYear() !== y || dt.getMonth() !== m || dt.getDate() !== d) return reject('not a real calendar date');
+      if (y < DATE_MIN_YEAR || y > DATE_MAX_YEAR) return reject('year ' + y + ' outside ' + DATE_MIN_YEAR + '-' + DATE_MAX_YEAR);
+      return dt;
+    };
+
+    if (value instanceof Date) {
+      if (isNaN(value)) return reject('invalid Date object');
+      return build(value.getFullYear(), value.getMonth(), value.getDate());
     }
-    
-    if (typeof value === 'string') {
-        value = value.trim();
-        
-        // FORCE DD/MM/YYYY parsing - day first, month second
-        let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-        if (parts) {
-            // DAY is parts[1], MONTH is parts[2] (DD/MM/YYYY)
-            const day = parseInt(parts[1]);
-            const month = parseInt(parts[2]) - 1;
-            const year = parseInt(parts[3]);
-            const date = new Date(year, month, day);
-            
-            // Validate the date
-            if (!isNaN(date) && date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
-                return date;
-            }
-            return date;
-        }
-        
-        // Handle DD-MM-YYYY format
-        parts = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-        if (parts) {
-            // DAY is parts[1], MONTH is parts[2]
-            const day = parseInt(parts[1]);
-            const month = parseInt(parts[2]) - 1;
-            const year = parseInt(parts[3]);
-            const date = new Date(year, month, day);
-            if (!isNaN(date) && date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
-                return date;
-            }
-            return date;
-        }
-        
-        // Handle "Dec 3, 2026" format - use standard Date parsing as fallback
-        let d = new Date(value);
-        if (!isNaN(d)) return d;
+
+    // Excel / Sheets serial number (also a numeric string like "46283")
+    if (typeof value === 'number' || (typeof value === 'string' && /^\d{5}(\.\d+)?$/.test(value.trim()))) {
+      const n = Number(value);
+      if (!(n > 59)) return reject('number too small to be a date serial');
+      const dt = new Date(1899, 11, 30 + Math.floor(n));   // local time, no DST drift
+      return build(dt.getFullYear(), dt.getMonth(), dt.getDate());
     }
-    
-    return null;
-}
+
+    if (typeof value !== 'string') return reject('unsupported type ' + typeof value);
+    const s = value.trim().replace(/\s+/g, ' ');
+
+    // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY  (day first, as used in the sheet)
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) {
+      const a = +m[1], b = +m[2], y = +m[3];
+      if (b > 12 && a <= 12) return build(y, a - 1, b);    // clearly MM/DD/YYYY, e.g. 09/18/2026
+      return build(y, b - 1, a);
+    }
+
+    // YYYY-MM-DD (optionally followed by a time)
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);
+    if (m) return build(+m[1], +m[2] - 1, +m[3]);
+
+    // "September 18, 2026", "Fri, Sep 18, 2026", "Sept. 18th 2026"
+    m = s.match(/^(?:[A-Za-z]{3,9},? )?([A-Za-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{4})$/);
+    if (m && MONTH_IDX[m[1].toLowerCase()] !== undefined) return build(+m[3], MONTH_IDX[m[1].toLowerCase()], +m[2]);
+
+    // "18 September 2026", "18-Sep-2026"
+    m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[ \-]([A-Za-z]{3,9})\.?,?[ \-](\d{4})$/);
+    if (m && MONTH_IDX[m[2].toLowerCase()] !== undefined) return build(+m[3], MONTH_IDX[m[2].toLowerCase()], +m[1]);
+
+    return reject('unrecognised format (needs a full 4-digit year)');
+  }
   function formatDate(d) {
     if (!d || !(d instanceof Date) || isNaN(d)) return '';
     return d.toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' });
@@ -645,6 +661,7 @@
     const colPRNo = findCol(['pr no', 'pr number']);
     const colParticulars = findCol(['particulars', 'description']);
     const colEarmarked = findCol(['earmarked']);
+    DATE_REJECTS.length = 0;
     fullData = json.map(row => {
       const prDate = colPRDate ? parseExcelDate(row[colPRDate]) : null;
       return {
@@ -659,6 +676,7 @@
         _prDateObj: prDate,
       };
     }).filter(r => r.Earmarked > 0 || r.Particulars);
+    if (DATE_REJECTS.length) console.warn('[Earmarked] ' + DATE_REJECTS.length + ' PR Date value(s) could not be read (column "' + colPRDate + '"). See the "[Date rejected]" lines above for the raw values.');
     
     if (fullData.length === 0) {
       console.warn('No earmarked data loaded');
