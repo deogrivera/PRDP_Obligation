@@ -550,6 +550,11 @@
   // null and is logged to the console as "[Date rejected]".
   const DATE_MIN_YEAR = 2020, DATE_MAX_YEAR = 2035;
   const DATE_REJECTS = [];
+  // Year-less text such as "Sept 18" or "18 Sept" is read as DEFAULT_YEAR (change it once a year).
+  // Set ASSUME_YEAR_IF_MISSING = false to reject such values instead.
+  const ASSUME_YEAR_IF_MISSING = true;
+  const DEFAULT_YEAR = 2026;
+  const DATE_ASSUMED = [];
   const MONTH_IDX = { jan:0, january:0, feb:1, february:1, mar:2, march:2, apr:3, april:3, may:4,
     jun:5, june:5, jul:6, july:6, aug:7, august:7, sep:8, sept:8, september:8,
     oct:9, october:9, nov:10, november:10, dec:11, december:11 };
@@ -604,6 +609,22 @@
     // "18 September 2026", "18-Sep-2026"
     m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[ \-]([A-Za-z]{3,9})\.?,?[ \-](\d{4})$/);
     if (m && MONTH_IDX[m[2].toLowerCase()] !== undefined) return build(+m[3], MONTH_IDX[m[2].toLowerCase()], +m[1]);
+
+    // Year-less: "Sept 18", "Sep. 2", "18 Sept"
+    if (ASSUME_YEAR_IF_MISSING) {
+      let mo, dy;
+      m = s.match(/^([A-Za-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?$/);
+      if (m) { mo = MONTH_IDX[m[1].toLowerCase()]; dy = +m[2]; }
+      else {
+        m = s.match(/^(\d{1,2})(?:st|nd|rd|th)? ([A-Za-z]{3,9})\.?$/);
+        if (m) { mo = MONTH_IDX[m[2].toLowerCase()]; dy = +m[1]; }
+      }
+      if (mo !== undefined) {
+        const dt = build(DEFAULT_YEAR, mo, dy);
+        if (dt) DATE_ASSUMED.push({ raw: value, assumed: dt.toDateString() });
+        return dt;
+      }
+    }
 
     return reject('unrecognised format (needs a full 4-digit year)');
   }
@@ -661,7 +682,7 @@
     const colPRNo = findCol(['pr no', 'pr number']);
     const colParticulars = findCol(['particulars', 'description']);
     const colEarmarked = findCol(['earmarked']);
-    DATE_REJECTS.length = 0;
+    DATE_REJECTS.length = 0; DATE_ASSUMED.length = 0;
     fullData = json.map(row => {
       const prDate = colPRDate ? parseExcelDate(row[colPRDate]) : null;
       return {
@@ -676,6 +697,7 @@
         _prDateObj: prDate,
       };
     }).filter(r => r.Earmarked > 0 || r.Particulars);
+    if (DATE_ASSUMED.length) console.warn('[Earmarked] ' + DATE_ASSUMED.length + ' PR Date value(s) had no year and were read as ' + DEFAULT_YEAR + '. Add the year in the source cells if any belong to another year. Example:', DATE_ASSUMED[0]);
     if (DATE_REJECTS.length) console.warn('[Earmarked] ' + DATE_REJECTS.length + ' PR Date value(s) could not be read (column "' + colPRDate + '"). See the "[Date rejected]" lines above for the raw values.');
     
     if (fullData.length === 0) {
