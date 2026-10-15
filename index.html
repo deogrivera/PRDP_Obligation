@@ -1046,6 +1046,15 @@
       console.log('[Balances][diag] rows whose value equals the difference (' + equalsDiff.length + '):', equalsDiff);
       console.log('[Balances][diag] exact duplicate rows:', Object.entries(dup).filter(e => e[1] > 1));
       console.log('[Balances][diag] rows in CSV:', json.length, '| rows kept:', balFullData.length);
+      const byAsa = {};
+      balFullData.forEach(r => {
+        const k = r.ASASheet || '(blank)';
+        byAsa[k] = byAsa[k] || { rows: 0, sum: 0 };
+        byAsa[k].rows++;
+        byAsa[k].sum = +(byAsa[k].sum + r.Balance).toFixed(2);
+      });
+      console.log('[Balances][diag] subtotal per ASA Sheet (dashboard):');
+      console.table(byAsa);
     })();
     // ===== END TEMPORARY DIAGNOSTIC =====
     
